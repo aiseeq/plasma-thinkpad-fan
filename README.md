@@ -105,6 +105,23 @@ Tune it with environment variables in the unit:
   not spin the fan up at all.
 - Fan levels are a ThinkPad/`thinkpad_acpi` feature. On other laptops the widget
   will show sensors but the level buttons will not work.
+- **A pinned level does not survive a reboot.** `thinkpad-fan-hold` is started as
+  a transient systemd unit, so after a restart the fan is back under automatic
+  control. To pin a level at boot, add a unit of your own:
+
+  ```ini
+  # /etc/systemd/system/thinkpad-fan-default.service
+  [Unit]
+  After=multi-user.target
+  [Service]
+  Type=oneshot
+  RemainAfterExit=yes
+  ExecStart=/usr/local/bin/thinkpad-fan-set 7
+  [Install]
+  WantedBy=multi-user.target
+  ```
+- The widget does not warn when `fan_control` is disabled in `thinkpad_acpi` —
+  the level buttons simply do nothing. `install.sh` checks this at install time.
 
 ## Tested on
 
