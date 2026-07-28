@@ -16,6 +16,15 @@ PlasmoidItem {
     readonly property string statusHelper: "/usr/local/bin/thinkpad-fan-status"
     readonly property string setHelper: "/usr/local/bin/thinkpad-fan-set"
 
+    // Configuration is not populated yet on the first binding pass, so every read
+    // needs a fallback — otherwise the sensors bind to undefined and stay empty.
+    readonly property string fanSensorId: Plasmoid.configuration.fanSensorId
+                                          || "lmsensors/thinkpad-isa-0000/fan1"
+    readonly property string tempSensorId: Plasmoid.configuration.tempSensorId
+                                           || "cpu/all/maximumTemperature"
+    readonly property string compactSecondLine: Plasmoid.configuration.compactSecondLine
+                                                || "frequency"
+
     property string fanLevel: "—"
     property bool thinkfanRunning: false
     property int freqMhz: 0
@@ -46,14 +55,14 @@ PlasmoidItem {
 
     Sensors.Sensor {
         id: fanSensor
-        sensorId: Plasmoid.configuration.fanSensorId
+        sensorId: root.fanSensorId
         updateRateLimit: 2000
         enabled: true
     }
 
     Sensors.Sensor {
         id: tempSensor
-        sensorId: Plasmoid.configuration.tempSensorId
+        sensorId: root.tempSensorId
         updateRateLimit: 2000
         enabled: true
     }
@@ -134,9 +143,9 @@ PlasmoidItem {
 
             PlasmaComponents.Label {
                 Layout.alignment: Qt.AlignHCenter
-                visible: Plasmoid.configuration.compactSecondLine !== "temperature"
+                visible: root.compactSecondLine !== "temperature"
                 text: {
-                    if (Plasmoid.configuration.compactSecondLine === "rpm")
+                    if (root.compactSecondLine === "rpm")
                         return root.rpm
                     return root.freqMhz >= 1000 ? (root.freqMhz / 1000).toFixed(1) + "G"
                                                 : root.freqMhz + "M"
