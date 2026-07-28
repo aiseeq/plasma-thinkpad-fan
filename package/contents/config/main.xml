@@ -1,0 +1,36 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<kcfg xmlns="http://www.kde.org/standards/kcfg/1.0"
+      xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance"
+      xsi:schemaLocation="http://www.kde.org/standards/kcfg/1.0
+                          http://www.kde.org/standards/kcfg/1.0/kcfg.xsd">
+
+  <kcfgfile name=""/>
+
+  <group name="General">
+
+    <!-- Sensor ids differ between models; list yours with:
+         busctl --user call org.kde.ksystemstats1 /org/kde/ksystemstats1 \
+                org.kde.ksystemstats1 allSensors -->
+    <entry name="fanSensorId" type="String">
+      <default>lmsensors/thinkpad-isa-0000/fan1</default>
+    </entry>
+
+    <entry name="tempSensorId" type="String">
+      <default>cpu/all/maximumTemperature</default>
+    </entry>
+
+    <entry name="showFrequency" type="Bool">
+      <default>true</default>
+    </entry>
+
+    <entry name="showThrottling" type="Bool">
+      <default>true</default>
+    </entry>
+
+    <!-- Compact panel line: rpm, frequency or temperature -->
+    <entry name="compactSecondLine" type="String">
+      <default>frequency</default>
+    </entry>
+
+  </group>
+</kcfg>

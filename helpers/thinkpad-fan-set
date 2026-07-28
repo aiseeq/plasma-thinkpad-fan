@@ -1,0 +1,45 @@
+#!/bin/bash
+# Switches the ThinkPad fan mode. Invoked through pkexec by the plasmoid,
+# so the argument is validated strictly and nothing else is executed.
+#
+#   thinkpad-fan-set auto   -- hand control back (thinkfan if installed, else firmware)
+#   thinkpad-fan-set 0..7   -- pin a fixed level
+#   thinkpad-fan-set full   -- full-speed (disengaged)
+#
+# Pinning a level stops thinkfan first: otherwise it overwrites the level
+# within seconds according to its own curve.
+set -u
+
+FAN=/proc/acpi/ibm/fan
+HOLD=/usr/local/bin/thinkpad-fan-hold
+
+if [[ ! -w "$FAN" ]]; then
+    echo "$FAN is not writable — is thinkpad_acpi loaded with fan_control=1?" >&2
+    exit 1
+fi
+
+stop_hold() {
+    systemctl stop thinkpad-fan-hold.service 2>/dev/null
+    systemctl reset-failed thinkpad-fan-hold.service 2>/dev/null
+}
+
+case "${1:-}" in
+    auto)
+        stop_hold
+        echo "level auto" > "$FAN"
+        # thinkfan is optional: plenty of setups leave the curve to the firmware.
+        systemctl list-unit-files thinkfan.service &>/dev/null &&
+            systemctl start thinkfan.service 2>/dev/null
+        ;;
+    [0-7]|full)
+        systemctl stop thinkfan.service 2>/dev/null
+        stop_hold
+        systemd-run --unit=thinkpad-fan-hold \
+            --description="Hold ThinkPad fan at level $1" \
+            "$HOLD" "$1" >/dev/null
+        ;;
+    *)
+        echo "usage: ${0##*/} auto|0-7|full" >&2
+        exit 2
+        ;;
+esac

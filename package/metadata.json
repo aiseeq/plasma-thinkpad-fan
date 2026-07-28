@@ -1,0 +1,22 @@
+{
+    "KPackageStructure": "Plasma/Applet",
+    "KPlugin": {
+        "Authors": [
+            {
+                "Email": "aiseeq@gmail.com",
+                "Name": "AiSee"
+            }
+        ],
+        "Category": "System Information",
+        "Description": "Fan speed, temperature, CPU frequency and throttling for ThinkPad laptops, with manual fan level control",
+        "Description[ru]": "Обороты вентилятора, температура, частота CPU и троттлинг для ThinkPad, с ручным управлением уровнем",
+        "Icon": "sensors",
+        "Id": "com.github.aiseeq.thinkpadfan",
+        "License": "MIT",
+        "Name": "ThinkPad Fan Control",
+        "Name[ru]": "Управление вентилятором ThinkPad",
+        "Version": "1.0",
+        "Website": "https://github.com/aiseeq/plasma-thinkpad-fan"
+    },
+    "X-Plasma-API-Minimum-Version": "6.0"
+}

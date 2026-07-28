@@ -1,0 +1,49 @@
+#!/bin/bash
+# Keeps the ThinkPad fan pinned at a level.
+#
+# The embedded controller (and thinkfan, if running) happily overwrite a manually
+# set level, so a single write is not enough — we rewrite it continuously.
+# The interval is deliberately short: a firmware-issued change then lives at most
+# one interval before being overwritten again.
+#
+# Safety net: if the package temperature exceeds THINKPAD_FAN_TCRIT, control is
+# handed back to automatic mode. Set THINKPAD_FAN_TCRIT=0 to disable (not advised
+# for low levels — a pinned "level 0" means no airflow at all).
+set -u
+
+FAN=/proc/acpi/ibm/fan
+INTERVAL=${THINKPAD_FAN_INTERVAL:-0.1}   # seconds between rewrites
+TCRIT=${THINKPAD_FAN_TCRIT:-90}          # °C, 0 disables the safety net
+
+hwmon_by_name() {
+    local n
+    for n in /sys/class/hwmon/hwmon*; do
+        [[ "$(cat "$n/name" 2>/dev/null)" == "$1" ]] && { echo "$n"; return 0; }
+    done
+    return 1
+}
+
+case "${1:-}" in
+    full)  cmd="level full-speed" ;;
+    [0-7]) cmd="level $1" ;;
+    *) echo "usage: ${0##*/} 0-7|full" >&2; exit 2 ;;
+esac
+
+CORE=$(hwmon_by_name coretemp) || CORE=""
+[[ -n "$CORE" && -r "$CORE/temp1_input" ]] || TCRIT=0
+
+while true; do
+    echo "$cmd" > "$FAN"
+
+    if (( TCRIT > 0 )); then
+        read -r t < "$CORE/temp1_input"
+        if (( t / 1000 > TCRIT )); then
+            echo "${0##*/}: $(( t / 1000 ))°C above ${TCRIT}°C — restoring automatic mode" >&2
+            echo "level auto" > "$FAN"
+            systemctl start thinkfan.service 2>/dev/null
+            exit 0
+        fi
+    fi
+
+    sleep "$INTERVAL"
+done

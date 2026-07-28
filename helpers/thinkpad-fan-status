@@ -1,0 +1,23 @@
+#!/bin/bash
+# Reports cooling state for the ThinkPad Fan Control plasmoid.
+#
+# Output: <level>|<thinkfan state>|<average CPU MHz>|<thermal throttle counter>
+#
+# The plasmoid compares the throttle counter between polls: a growing counter
+# means the CPU is being throttled right now. We deliberately use *_count and
+# not *_total_time_ms — the latter stays 0 on several Intel generations
+# (confirmed on Meteor Lake / Core Ultra 155H).
+#
+# Runs unprivileged: everything here is world-readable.
+
+FAN=/proc/acpi/ibm/fan
+THROTTLE=/sys/devices/system/cpu/cpu0/thermal_throttle/package_throttle_count
+
+level=$(awk '/^level:/{print $2}' "$FAN" 2>/dev/null)
+[[ -n "$level" ]] || level="n/a"
+
+printf '%s|%s|%s|%s\n' \
+    "$level" \
+    "$(systemctl is-active thinkfan.service 2>/dev/null)" \
+    "$(awk '/cpu MHz/{s+=$4; n++} END{printf "%d", (n ? s/n : 0)}' /proc/cpuinfo)" \
+    "$(cat "$THROTTLE" 2>/dev/null || echo 0)"

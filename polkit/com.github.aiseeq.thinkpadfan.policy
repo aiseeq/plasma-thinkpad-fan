@@ -1,0 +1,32 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE policyconfig PUBLIC
+ "-//freedesktop//DTD PolicyKit Policy Configuration 1.0//EN"
+ "http://www.freedesktop.org/software/polkit/policyconfig-1.dtd">
+<policyconfig>
+
+  <vendor>plasma-thinkpad-fan</vendor>
+  <vendor_url>https://github.com/aiseeq/plasma-thinkpad-fan</vendor_url>
+
+  <!--
+    The locally logged-in user may change the fan level without a password.
+    Without this the widget would prompt on every click, which makes it useless.
+
+    The privilege is narrow: it only grants execution of thinkpad-fan-set, which
+    accepts nothing but auto|0-7|full and refuses anything else. If you prefer a
+    password prompt, change allow_active to auth_admin_keep.
+  -->
+  <action id="com.github.aiseeq.thinkpadfan.set">
+    <description>Set ThinkPad fan level</description>
+    <description xml:lang="ru">Задать уровень вентилятора ThinkPad</description>
+    <message>Authentication is required to change the fan level</message>
+    <message xml:lang="ru">Для изменения уровня вентилятора требуется аутентификация</message>
+    <defaults>
+      <allow_any>auth_admin</allow_any>
+      <allow_inactive>auth_admin</allow_inactive>
+      <allow_active>yes</allow_active>
+    </defaults>
+    <annotate key="org.freedesktop.policykit.exec.path">/usr/local/bin/thinkpad-fan-set</annotate>
+    <annotate key="org.freedesktop.policykit.exec.allow_gui">true</annotate>
+  </action>
+
+</policyconfig>
