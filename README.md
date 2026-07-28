@@ -7,10 +7,14 @@ straight from the panel.
 Plasma ships widgets that *display* sensors, but nothing that *controls* the fan.
 This one does both.
 
-```
-  52°        <- temperature
- 1.3G        <- CPU frequency, turns red while throttling
-```
+<p align="center">
+  <img src="docs/screenshot-panel.png" alt="Panel: temperature and CPU frequency" height="120">
+  &nbsp;&nbsp;&nbsp;
+  <img src="docs/screenshot-popup.png" alt="Popup: readings and fan level buttons" height="320">
+</p>
+
+In the panel: temperature on top, CPU frequency below — the frequency turns red
+the moment the CPU is thermally throttled. Click it for readings and fan levels.
 
 ## Features
 
@@ -101,6 +105,13 @@ Tune it with environment variables in the unit:
   not spin the fan up at all.
 - Fan levels are a ThinkPad/`thinkpad_acpi` feature. On other laptops the widget
   will show sensors but the level buttons will not work.
+
+## Tested on
+
+- ThinkPad E16 Gen 2 (21MA, Core Ultra 7 155H), Fedora 44, Plasma 6.7.3
+
+Reports from other ThinkPads are welcome — especially whether `full speed`
+behaves sanely and which sensor ids your model needs.
 
 ## Caution
 

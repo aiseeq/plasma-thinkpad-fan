@@ -12,12 +12,17 @@ HELPERS=(thinkpad-fan-status thinkpad-fan-set thinkpad-fan-hold)
 
 die() { echo "error: $*" >&2; exit 1; }
 
+# Run as your normal user: the applet is installed into the *user's* ~/.local,
+# and under sudo that would be /root/.local — installed for nobody.
+[[ $EUID -ne 0 ]] ||
+    die "do not run this with sudo — run it as your user, it will ask for sudo itself"
+
+# System files (helpers, polkit rule) need root; the applet itself must not.
+SUDO=""
 need_root() {
-    [[ $EUID -eq 0 ]] && return 0
-    command -v sudo >/dev/null || die "need root to install system files"
+    command -v sudo >/dev/null || die "sudo is required to install the system files"
     SUDO=sudo
 }
-SUDO=""
 
 if [[ "${1:-}" == "--uninstall" ]]; then
     need_root
