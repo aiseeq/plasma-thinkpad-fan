@@ -19,7 +19,13 @@ ThinkPad Fan Control
 
 **Category**
 
-`Plasma 6 Add-Ons` → `Plasma 6 Applets` (widgets for the Plasma 6 panel/desktop).
+`Plasma 6 Extensions` — then the applet/widget subcategory.
+
+Make sure you are on **store.kde.org** and not on pling.com: the upload form is
+shared across the OpenDesktop platform, but the category list comes from the site
+you are logged into. On pling.com the only Plasma entries are the Plasma Mobile
+ones, and no desktop Plasma category is offered at all.
+
 Do **not** post under Plasma 5 categories — the applet requires the Plasma 6 API.
 
 **Summary / short description**
