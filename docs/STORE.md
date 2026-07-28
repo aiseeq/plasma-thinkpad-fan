@@ -98,7 +98,11 @@ thinkpad, fan, fan-control, sensors, temperature, throttling, cpu, laptop, plasm
 https://github.com/aiseeq/plasma-thinkpad-fan
 ```
 
-**Screenshots**
+**Product Logo**
+
+Upload `docs/logo.png` (256×256).
+
+**Gallery pictures** (mandatory)
 
 Upload both from `docs/`:
 
