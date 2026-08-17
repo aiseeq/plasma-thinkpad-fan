@@ -2,9 +2,11 @@
 # Keeps the ThinkPad fan pinned at a level.
 #
 # The embedded controller (and thinkfan, if running) happily overwrite a manually
-# set level, so a single write is not enough — we rewrite it continuously.
-# The interval is deliberately short: a firmware-issued change then lives at most
-# one interval before being overwritten again.
+# set level, so a single write is not enough — we keep watching and restore it.
+# We only write when the level actually changed: on some fans (seen on the
+# ThinkPad E16 Gen 2 replacement cooler) every write restarts the EC's spin-up
+# ramp, so a blind rewrite every 100 ms keeps the fan stuck at ~2000 RPM
+# instead of the requested speed.
 #
 # Safety net: if the package temperature exceeds THINKPAD_FAN_TCRIT, control is
 # handed back to automatic mode. Set THINKPAD_FAN_TCRIT=0 to disable (not advised
@@ -12,7 +14,7 @@
 set -u
 
 FAN=/proc/acpi/ibm/fan
-INTERVAL=${THINKPAD_FAN_INTERVAL:-0.1}   # seconds between rewrites
+INTERVAL=${THINKPAD_FAN_INTERVAL:-1}     # seconds between checks
 TCRIT=${THINKPAD_FAN_TCRIT:-90}          # °C, 0 disables the safety net
 
 hwmon_by_name() {
@@ -24,16 +26,18 @@ hwmon_by_name() {
 }
 
 case "${1:-}" in
-    full)  cmd="level full-speed" ;;
-    [0-7]) cmd="level $1" ;;
+    full)  cmd="level full-speed"; want="disengaged" ;;
+    [0-7]) cmd="level $1";         want="$1" ;;
     *) echo "usage: ${0##*/} 0-7|full" >&2; exit 2 ;;
 esac
+
+current_level() { awk '/^level:/{print $2}' "$FAN" 2>/dev/null; }
 
 CORE=$(hwmon_by_name coretemp) || CORE=""
 [[ -n "$CORE" && -r "$CORE/temp1_input" ]] || TCRIT=0
 
 while true; do
-    echo "$cmd" > "$FAN"
+    [[ "$(current_level)" == "$want" ]] || echo "$cmd" > "$FAN"
 
     if (( TCRIT > 0 )); then
         read -r t < "$CORE/temp1_input"

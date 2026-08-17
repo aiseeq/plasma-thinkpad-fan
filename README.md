@@ -25,7 +25,7 @@ the moment the CPU is thermally throttled. Click it for readings and fan levels.
 - honest mode reporting: automatic via thinkfan, automatic via firmware, or
   manually pinned — these are three different states and the widget says which
 - levels are *held*: the firmware and thinkfan both overwrite a manually set
-  level within seconds, so a helper rewrites it continuously
+  level within seconds, so a helper watches it and puts it back
 - safety net: a pinned level is released if the CPU exceeds 90 °C
 
 ## Requirements
@@ -85,11 +85,14 @@ If you would rather be asked for a password, edit
 
 Writing a level once is not enough. `thinkfan`, if running, reapplies its own
 curve within seconds; the embedded controller also revises the level on its own.
-So `thinkpad-fan-hold` rewrites the requested level every 100 ms — a foreign
-change survives at most one interval.
+So `thinkpad-fan-hold` checks the level every second and writes it back if
+something changed it — a foreign change survives at most one interval. It
+deliberately does *not* rewrite blindly: on some coolers every write restarts
+the EC's spin-up ramp, and a rewrite every 100 ms left the fan stuck at
+~2000 RPM whatever level was requested.
 
 Tune it with environment variables in the unit:
-`THINKPAD_FAN_INTERVAL` (seconds, default `0.1`) and `THINKPAD_FAN_TCRIT`
+`THINKPAD_FAN_INTERVAL` (seconds, default `1`) and `THINKPAD_FAN_TCRIT`
 (°C, default `90`, `0` disables the safety net).
 
 ## Known limitations
