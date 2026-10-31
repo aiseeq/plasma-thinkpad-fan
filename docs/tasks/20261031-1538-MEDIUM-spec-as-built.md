@@ -1,6 +1,6 @@
 # ТЗ plasma-thinkpad-fan как сделано + критик
 
-Статус: в работе
+Статус: готово
 Исполнитель: git-admin
 
 ## Что сделать
@@ -19,3 +19,6 @@
 - 2026-10-31 15:38 в работе — git-admin
 - 2026-10-31 15:39 note — git-admin: автор: worker 1031-1539-spec-as-built-3 (terra, документация, --max 2h, --escalate none) запущен 15:39 CET; дерево ; бриф и приёмка — /home/aisee/.cache/worktrees/reverse-spec/plasma-thinkpad-fan/{brief.md,accept.cmd}; на дереве без spec приёмка — код 1
 - 2026-10-31 15:39 note — git-admin: дерево автора: /home/aisee/.cache/worktrees/plasma-thinkpad-fan/spec-as-built (в прошлой строке путь пуст)
+- 2026-10-31 18:02 note — git-admin: 31.10 16:4x — git-admin: автор принят (worker 1031-1539-spec-as-built-3, Terra; приёмка ok, 89 ссылок; выборка: 3 из 4 верны, 700 мс — main.qml:121, а не 56-67). Репо публичное: spec не коммитится, критик в том же дереве.
+- 2026-10-31 18:02 note — git-admin: критик: worker 1031-1642-spec-critic (Terra, 15 мин, 0.015% недели OpenAI) — 8 находок (высоких 4). Разбор: worker 1031-1726-spec-triage-2 (Terra): принято 8, отклонено 0, тикетов 8. ТЗ, critic, triage — в claude-config 2adcd5b (.claude/tools/plasma-thinkpad-fan/), не в репо (публичное).
+- 2026-10-31 18:02 готово — git-admin-verifier (session git-admin): свежий Terra (worker ask, класс ревью), 31.10 ~18:2x CET: ПРИНЯТО, 8/8 решений подтверждены по коду; ответ — /home/aisee/.cache/worktrees/reverse-spec/plasma-thinkpad-fan/verify.txt
