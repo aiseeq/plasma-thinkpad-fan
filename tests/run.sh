@@ -341,25 +341,13 @@ report 7 'ошибка чтения счётчика отражается как
 # firmware auto without thinkfan is valid.
 reset_case
 mkdir -p "$WORK/hwmon/hwmon0"; echo coretemp > "$WORK/hwmon/hwmon0/name"; echo 91000 > "$WORK/hwmon/hwmon0/temp1_input"
-box_full_fan() {
-  "$BWRAP" --unshare-net --dev-bind / / --bind /dev/full /proc/acpi/ibm/fan \
-    --bind "$WORK/hwmon" /sys/class/hwmon \
-    --bind "$WORK/throttle" /sys/devices/system/cpu/cpu0/thermal_throttle \
-    --bind "$WORK/bin/systemctl" /usr/bin/systemctl \
-    --bind "$WORK/bin/systemd-run" /usr/bin/systemd-run \
-    --bind "$WORK/bin/pkexec" /usr/bin/pkexec \
-    --bind "$WORK/hold" /usr/local/bin/thinkpad-fan-hold \
-    --bind "$ROOT/helpers/thinkpad-fan-set" /usr/local/bin/thinkpad-fan-set \
-    --bind "$ROOT/helpers/thinkpad-fan-status" /usr/local/bin/thinkpad-fan-status \
-    --bind "$WORK/bin/sudo" /usr/bin/sudo \
-    --bind "$WORK/bin/rm" /usr/bin/rm \
-    --bind "$WORK/bin/kpackagetool6" /usr/bin/kpackagetool6 \
-    --setenv FAN_TEST_LOG "$WORK/log" --setenv FAN_TEST_FAN "$WORK/fan" \
-    --setenv FAN_TEST_UNITS "$WORK/units" "$@"
-}
-box_full_fan /usr/bin/env THINKPAD_FAN_INTERVAL=0.02 /bin/bash "$ROOT/helpers/thinkpad-fan-hold" 0 >"$WORK/f8write" 2>&1; rfw=$?
+# The fan file already reads the held level, so hold never writes before the
+# overheat check; it is read-only, so the first write is the "level auto" one.
+printf 'level: 0\n' > "$WORK/fan"; chmod 444 "$WORK/fan"
+box /usr/bin/env THINKPAD_FAN_INTERVAL=0.02 /bin/bash "$ROOT/helpers/thinkpad-fan-hold" 0 >"$WORK/f8write" 2>&1; rfw=$?
+chmod 644 "$WORK/fan"
 # shellcheck disable=SC2329
-check_f8_write() { [[ $rfw -ne 0 ]] && grep -Eqi 'auto|automatic|fan|temperature|space left' "$WORK/f8write"; }
+check_f8_write() { [[ $rfw -ne 0 ]] && grep -q 'above' "$WORK/f8write" && grep -Eqi 'restore automatic|automatic fan' "$WORK/f8write"; }
 report 8 'отказ записи auto обнаруживается' check_f8_write
 reset_case
 mkdir -p "$WORK/hwmon/hwmon0"; echo coretemp > "$WORK/hwmon/hwmon0/name"; echo 91000 > "$WORK/hwmon/hwmon0/temp1_input"
