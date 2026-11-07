@@ -1,10 +1,13 @@
 # Isolated checks
 
-- F1 checks missing or unreadable temperature input before and after hold starts; failure must report an error, write `level auto`, exit nonzero, and restart installed thinkfan.
+- F1 checks missing or unreadable temperature input before and after hold starts; failure must report an error, write `level auto`, exit nonzero, and restart installed thinkfan. The protection-off setting must keep holding.
 - F2 checks that 90000 m°C keeps the level and 90500 m°C restores automatic control.
-- F3 checks `Fan level switch failed` for pkexec exit codes 126 and 127, silence on success, and helper write/launch outcomes.
-- F4 checks active, inactive, and unknown hold states through the status helper's appended fifth field, plus mode mapping for the same numeric level.
-- F5 checks automatic control is restored before component removal and a failed service start is reported.
+- F3 checks write and systemd-run errors, pkexec codes 126/127 through `fanstate.switchError`, and these set-helper cases: no hold/no thinkfan, auto with no hold, replacing an active hold, and systemd-run refusal.
+- F3 also rejects helper code that probes the fixture filesystem (`stat -f` or proc filesystem type).
+- F4 checks the status helper's fifth field: active, inactive (also for an unloaded transient hold unit — the normal state after a stop), unknown only when systemctl gives no answer; plus mode mapping for a numeric level.
+- F5 checks `sudo thinkpad-fan-set auto` precedes the first `sudo rm`, that uninstall makes no direct privileged calls, and that a failed restore reports an error and removes nothing.
 - F6 uses one numeric contract: `throttle(previous, current)` returns the event delta, `0` for no new events, and `null` without a baseline; samples are 10, 11, 11.
 - F7 checks unavailable sensors and the `unavailable` counter marker differ from real zeros, including resetting the counter baseline.
-- F8 checks auto-write failure, failure to start installed thinkfan, and valid firmware automation when `list-unit-files` reports thinkfan absent; start need not be called.
+- F8 checks auto-write failure, failure to start installed thinkfan, and valid firmware automation when `list-unit-files` reports thinkfan absent; a start call is not required.
+
+The systemd stub models loaded unit state in `$WORK/units`: successful `systemd-run` loads an active transient unit; stopping an unloaded unit returns 5, resetting an unloaded unit returns 1, and `is-active` returns the systemd word and status for active, inactive, failed, or unloaded state. Per-operation environment overrides can inject command failures.
