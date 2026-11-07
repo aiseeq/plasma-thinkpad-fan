@@ -29,7 +29,7 @@ if [[ "${1:-}" == "--uninstall" ]]; then
     if [[ -x /usr/local/bin/thinkpad-fan-set ]]; then
         $SUDO /usr/local/bin/thinkpad-fan-set auto || die "failed to restore automatic fan control; nothing was uninstalled"
     else
-        echo "warning: /usr/local/bin/thinkpad-fan-set is missing; nothing to restore before uninstall" >&2
+        die "cannot restore automatic fan control: run 'sudo systemctl stop thinkpad-fan-hold.service' and 'echo level auto | sudo tee /proc/acpi/ibm/fan'; nothing was uninstalled"
     fi
     kpackagetool6 --type Plasma/Applet --remove "$APPLET_ID" 2>/dev/null || true
     for h in "${HELPERS[@]}"; do $SUDO rm -f "/usr/local/bin/$h"; done

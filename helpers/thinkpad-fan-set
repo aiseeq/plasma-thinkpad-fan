@@ -50,21 +50,80 @@ stop_unit_if_loaded() {
     }
 }
 
+thinkfan_unit_installed() {
+    local output rc
+    output=$(systemctl list-unit-files thinkfan.service 2>&1)
+    rc=$?
+    if [[ $rc -eq 0 ]]; then
+        return 0
+    fi
+    if grep -Eqi '0 unit files listed|could not be found|not found' <<< "$output"; then
+        return 1
+    fi
+    echo "failed to query thinkfan.service: ${output:-systemctl returned status $rc}" >&2
+    return 2
+}
+
+start_thinkfan_if_installed() {
+    local rc
+    if thinkfan_unit_installed; then
+        systemctl start thinkfan.service 2>/dev/null || {
+            echo "failed to start thinkfan.service" >&2
+            return 1
+        }
+    else
+        rc=$?
+        [[ $rc -eq 1 ]] || return 1
+    fi
+}
+
+set_automatic() {
+    stop_unit_if_loaded thinkpad-fan-hold.service || return 1
+    echo "level auto" > "$FAN" || {
+        echo "failed to write automatic fan level" >&2
+        return 1
+    }
+    start_thinkfan_if_installed
+}
+
 case "${1:-}" in
     auto)
-        stop_unit_if_loaded thinkpad-fan-hold.service || exit 1
-        echo "level auto" > "$FAN" || { echo "failed to write automatic fan level" >&2; exit 1; }
-        # thinkfan is optional: plenty of setups leave the curve to the firmware.
-        if systemctl list-unit-files thinkfan.service &>/dev/null; then
-            systemctl start thinkfan.service 2>/dev/null || { echo "failed to start thinkfan.service" >&2; exit 1; }
-        fi
+        set_automatic || exit 1
         ;;
     [0-7]|full)
         stop_unit_if_loaded thinkfan.service || exit 1
         stop_unit_if_loaded thinkpad-fan-hold.service || exit 1
-        systemd-run --unit=thinkpad-fan-hold \
+        if ! systemd-run --no-block --unit=thinkpad-fan-hold \
             --description="Hold ThinkPad fan at level $1" \
-            "$HOLD" "$1" >/dev/null || { echo "failed to start fan hold" >&2; exit 1; }
+            "$HOLD" "$1" >/dev/null; then
+            echo "failed to start fan hold" >&2
+            set_automatic || echo "failed to restore automatic fan control after hold start failure" >&2
+            exit 1
+        fi
+
+        active=0
+        for _ in {1..10}; do
+            hold_state=$(systemctl is-active thinkpad-fan-hold.service 2>/dev/null) || hold_rc=$?
+            hold_rc=${hold_rc:-0}
+            if [[ $hold_state == active && $hold_rc -eq 0 ]]; then
+                active=1
+                break
+            fi
+            [[ $hold_state == failed ]] && break
+            sleep 0.05
+            unset hold_rc hold_state
+        done
+        # "active" comes as soon as hold is exec'd; its protection checks run
+        # right after and exit within milliseconds, so look once more a bit later.
+        if [[ $active -eq 1 ]]; then
+            sleep 0.3
+            [[ $(systemctl is-active thinkpad-fan-hold.service 2>/dev/null) == active ]] || active=0
+        fi
+        if [[ $active -ne 1 ]]; then
+            echo "fan hold failed to become active" >&2
+            set_automatic || echo "failed to restore automatic fan control after hold failure" >&2
+            exit 1
+        fi
         ;;
     *)
         echo "usage: ${0##*/} auto|0-7|full" >&2

@@ -33,7 +33,12 @@ case "$base" in
     opkey=${op^^}; opkey=${opkey//-/_}
     rcvar=TEST_SYSTEMCTL_${opkey}_RC
     rc=${!rcvar:-}
-    if [[ -n $rc ]]; then exit "$rc"; fi
+    if [[ -n $rc ]]; then
+      if [[ $op == list-unit-files && -n ${TEST_SYSTEMCTL_LIST_UNIT_FILES_OUTPUT:-} ]]; then
+        printf '%s\n' "$TEST_SYSTEMCTL_LIST_UNIT_FILES_OUTPUT" >&2
+      fi
+      exit "$rc"
+    fi
     case "$op" in
       list-unit-files)
         if [[ $unit == thinkfan.service && ${TEST_THINKFAN_INSTALLED:-yes} == no ]]; then
@@ -84,7 +89,7 @@ case "$base" in
       for arg in "$@"; do
         if [[ $arg == --unit=* ]]; then
           unit=${arg#--unit=}; [[ $unit == *.service ]] || unit+=.service
-          unit_set "$unit" active
+          unit_set "$unit" "${TEST_SYSTEMD_RUN_HOLD_STATE:-active}"
         fi
       done
     fi
@@ -236,7 +241,7 @@ report 3 'helpers do not identify the test filesystem' check_helpers_no_fs_probe
 # F3 QML reports switch errors and stays quiet after success.
 node - "$ROOT/package/contents/code/fanstate.js" <<'NODE'
 const fs=require('fs'),vm=require('vm'),assert=require('assert'); const c={}; vm.createContext(c); vm.runInContext(fs.readFileSync(process.argv[2],'utf8').split(String.fromCharCode(10)).slice(1).join(String.fromCharCode(10)),c);
-try { assert.equal(c.switchError(126,''),'Fan level switch failed'); assert.equal(c.switchError(127,''),'Fan level switch failed'); process.exit(0); } catch(e) { process.exit(1); }
+try { assert.equal(c.switchError(126,''),'switch-failed'); assert.equal(c.switchError(127,''),'switch-failed'); process.exit(0); } catch(e) { process.exit(1); }
 NODE
 report 3 'отказ переключения дает понятное сообщение в виджете' test "$?" -eq 0
 node - "$ROOT/package/contents/code/fanstate.js" <<'NODE'
@@ -361,6 +366,101 @@ box /usr/bin/env THINKPAD_FAN_INTERVAL=0.02 TEST_THINKFAN_INSTALLED=no /bin/bash
 # shellcheck disable=SC2329
 check_f8_firmware() { [[ $rfa -eq 0 ]] && [[ $(fan_level) == auto ]]; }
 report 8 'автоматика прошивки без thinkfan допустима' check_f8_firmware
+
+# F3: failed systemd-run must restore automatic control and retain both errors.
+reset_case
+unit_set thinkfan.service active
+box /usr/bin/env TEST_THINKFAN_INSTALLED=yes TEST_SYSTEMD_RUN_RC=1 TEST_SYSTEMCTL_START_RC=1 \
+  /bin/bash /usr/local/bin/thinkpad-fan-set 3 >"$WORK/set-run-restore.out" 2>&1; run_restore_rc=$?
+# shellcheck disable=SC2329
+check_run_restore() {
+  [[ $run_restore_rc -ne 0 && $(fan_level) == auto ]] &&
+    grep -qi 'failed to start fan hold' "$WORK/set-run-restore.out" &&
+    grep -qi 'failed to start thinkfan.service' "$WORK/set-run-restore.out"
+}
+report 3 'systemd-run failure restores automatic mode and reports restore failure' check_run_restore
+
+# F3: a successful systemd-run can still produce a failed transient unit.
+reset_case
+box /usr/bin/env TEST_THINKFAN_INSTALLED=no TEST_SYSTEMD_RUN_HOLD_STATE=failed \
+  /bin/bash /usr/local/bin/thinkpad-fan-set 3 >"$WORK/set-hold-failed.out" 2>&1; hold_failed_rc=$?
+# shellcheck disable=SC2329
+check_hold_failed() {
+  [[ $hold_failed_rc -ne 0 && $(fan_level) == auto ]] &&
+    grep -qi 'hold.*failed\|failed.*hold' "$WORK/set-hold-failed.out"
+}
+report 3 'set detects failed hold after systemd-run and restores auto' check_hold_failed
+
+# F5: uninstall must stop before removal if the set helper is not executable.
+printf 'not executable\n' > "$WORK/nonexec-set"
+chmod 644 "$WORK/nonexec-set"
+box_without_set() {
+  "$BWRAP" --unshare-net --dev-bind / / --bind "$WORK/fan" /proc/acpi/ibm/fan \
+    --bind "$WORK/bin/systemctl" /usr/bin/systemctl \
+    --bind "$WORK/bin/pkexec" /usr/bin/pkexec \
+    --bind "$WORK/bin/sudo" /usr/bin/sudo \
+    --bind "$WORK/bin/rm" /usr/bin/rm \
+    --bind "$WORK/bin/kpackagetool6" /usr/bin/kpackagetool6 \
+    --ro-bind "$WORK/nonexec-set" /usr/local/bin/thinkpad-fan-set \
+    --setenv FAN_TEST_LOG "$WORK/log" --setenv FAN_TEST_FAN "$WORK/fan" \
+    --setenv FAN_TEST_UNITS "$WORK/units" "$@"
+}
+reset_case
+box_without_set /usr/bin/env PATH=/usr/bin:/bin bash "$ROOT/install.sh" --uninstall >"$WORK/uninstall-no-set.out" 2>&1; uninstall_no_set_rc=$?
+# shellcheck disable=SC2329
+check_uninstall_no_set() {
+  [[ $uninstall_no_set_rc -ne 0 ]] &&
+    grep -q 'sudo systemctl stop thinkpad-fan-hold.service' "$WORK/uninstall-no-set.out" &&
+    grep -q 'echo level auto | sudo tee /proc/acpi/ibm/fan' "$WORK/uninstall-no-set.out" &&
+    ! grep -q '^sudo rm ' "$WORK/log" && ! grep -q '^kpackagetool6 ' "$WORK/log"
+}
+report 5 'uninstall without executable set helper reports manual recovery and removes nothing' check_uninstall_no_set
+
+# F8 and set auto must distinguish a missing optional unit from systemd failure.
+reset_case
+box /usr/bin/env TEST_SYSTEMCTL_LIST_UNIT_FILES_RC=1 \
+  TEST_SYSTEMCTL_LIST_UNIT_FILES_OUTPUT='Failed to connect to bus' \
+  /bin/bash /usr/local/bin/thinkpad-fan-set auto >"$WORK/set-list-error.out" 2>&1; set_list_error_rc=$?
+# shellcheck disable=SC2329
+check_set_list_error() {
+  [[ $set_list_error_rc -ne 0 ]] && grep -Eqi '(query|check|list).*thinkfan|thinkfan.*(query|check|list)' "$WORK/set-list-error.out"
+}
+report 8 'set auto reports systemd list-unit-files failure' check_set_list_error
+reset_case
+mkdir -p "$WORK/hwmon/hwmon0"; echo coretemp > "$WORK/hwmon/hwmon0/name"; echo 91000 > "$WORK/hwmon/hwmon0/temp1_input"
+box /usr/bin/env THINKPAD_FAN_INTERVAL=0.02 TEST_SYSTEMCTL_LIST_UNIT_FILES_RC=1 \
+  TEST_SYSTEMCTL_LIST_UNIT_FILES_OUTPUT='Failed to connect to bus' \
+  /bin/bash "$ROOT/helpers/thinkpad-fan-hold" 0 >"$WORK/hold-list-error.out" 2>&1; hold_list_error_rc=$?
+# shellcheck disable=SC2329
+check_hold_list_error() {
+  [[ $hold_list_error_rc -ne 0 ]] && grep -Eqi '(query|check|list).*thinkfan|thinkfan.*(query|check|list)' "$WORK/hold-list-error.out"
+}
+report 8 'hold reports systemd list-unit-files failure during recovery' check_hold_list_error
+
+# F7: failed and incomplete polls clear old readings and the counter baseline.
+node - "$ROOT/package/contents/code/fanstate.js" <<'NODE'
+const fs=require('fs'),vm=require('vm'),assert=require('assert'); const c={}; vm.createContext(c); vm.runInContext(fs.readFileSync(process.argv[2],'utf8').split(String.fromCharCode(10)).slice(1).join(String.fromCharCode(10)),c);
+try {
+  const healthy=c.applyStatus(10,'3|inactive|2200|11|active',0);
+  assert.equal(healthy.freqMhz,2200); assert.equal(healthy.throttleDelta,1); assert.equal(healthy.throttleBaseline,11);
+  const failed=c.applyStatus(healthy.throttleBaseline,'',1);
+  assert.equal(failed.freqMhz,null); assert.equal(failed.throttleCount,null); assert.equal(failed.throttleBaseline,null);
+  const afterFailure=c.applyStatus(failed.throttleBaseline,'3|inactive|2200|20|active',0);
+  assert.equal(afterFailure.throttleDelta,null);
+  const incomplete=c.applyStatus(afterFailure.throttleBaseline,'3|inactive|2200|21',0);
+  assert.equal(incomplete.freqMhz,null); assert.equal(incomplete.throttleBaseline,null);
+  process.exit(0);
+} catch(e) { process.exit(1); }
+NODE
+report 7 'failed and incomplete status polls clear values and throttle baseline' test "$?" -eq 0
+
+# F3: switch error codes stay separate from translatable QML literals.
+node - "$ROOT/package/contents/code/fanstate.js" "$ROOT/package/contents/ui/main.qml" <<'NODE'
+const fs=require('fs'),vm=require('vm'),assert=require('assert'); const c={}; vm.createContext(c); vm.runInContext(fs.readFileSync(process.argv[2],'utf8').split(String.fromCharCode(10)).slice(1).join(String.fromCharCode(10)),c);
+const qml=fs.readFileSync(process.argv[3],'utf8');
+try { assert.equal(c.switchError(127,''),'switch-failed'); assert.equal(c.switchError(0,''),''); assert(qml.includes('i18n("Fan level switch failed")')); assert(!qml.includes('i18n(FanState.switchError')); process.exit(0); } catch(e) { process.exit(1); }
+NODE
+report 3 'switch failure code maps to a literal translatable QML message' test "$?" -eq 0
 
 [[ $FAILURES -gt 0 ]] && exit 1
 exit 0

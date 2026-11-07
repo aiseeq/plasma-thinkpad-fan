@@ -32,15 +32,34 @@ esac
 
 current_level() { awk '/^level:/{print $2}' "$FAN" 2>/dev/null; }
 
+thinkfan_unit_installed() {
+    local output rc
+    output=$(systemctl list-unit-files thinkfan.service 2>&1)
+    rc=$?
+    if [[ $rc -eq 0 ]]; then
+        return 0
+    fi
+    if grep -Eqi '0 unit files listed|could not be found|not found' <<< "$output"; then
+        return 1
+    fi
+    echo "${0##*/}: failed to query thinkfan.service: ${output:-systemctl returned status $rc}" >&2
+    return 2
+}
+
 restore_automatic() {
     local failed=0
     if ! echo "level auto" > "$FAN"; then
         echo "${0##*/}: failed to restore automatic fan level" >&2
         failed=1
     fi
-    if systemctl list-unit-files thinkfan.service >/dev/null 2>&1; then
+    if thinkfan_unit_installed; then
         if ! systemctl start thinkfan.service; then
             echo "${0##*/}: failed to start thinkfan.service" >&2
+            failed=1
+        fi
+    else
+        local query_rc=$?
+        if [[ $query_rc -ne 1 ]]; then
             failed=1
         fi
     fi

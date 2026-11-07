@@ -89,24 +89,19 @@ PlasmoidItem {
             if (source !== root.statusHelper) {
                 if (data["exit code"] === 0)
                     root.switchFailure = ""
-                else
-                    root.switchFailure = i18n(FanState.switchError(data["exit code"], data.stderr))
+                else if (FanState.switchError(data["exit code"], data.stderr) === "switch-failed")
+                    root.switchFailure = i18n("Fan level switch failed")
             }
             if (source === root.statusHelper) {
-                var state = FanState.parseStatus(data.stdout || "", data["exit code"])
+                var state = FanState.applyStatus(root.throttleCount, data.stdout || "", data["exit code"])
                 root.helperMissing = state.helperMissing
-                if (state.partsCount >= 2) {
-                    root.fanLevel = state.level
-                    root.thinkfanRunning = state.thinkfanRunning
-                    if (state.partsCount >= 5)
-                        root.holdState = state.holdState
-                }
-                if (state.partsCount >= 4) {
-                    root.freqMhz = state.freqMhz
-                    root.throttleDelta = FanState.throttle(root.throttleCount, state.throttleCount)
-                    root.throttling = root.throttleDelta !== null && root.throttleDelta > 0
-                    root.throttleCount = FanState.nextThrottleBaseline(state.throttleCount)
-                }
+                root.fanLevel = state.level === null ? "—" : state.level
+                root.thinkfanRunning = state.thinkfanRunning
+                root.holdState = state.holdState
+                root.freqMhz = state.freqMhz
+                root.throttleDelta = state.throttleDelta
+                root.throttling = state.throttling
+                root.throttleCount = state.throttleBaseline
             }
             exec.disconnectSource(source)
         }

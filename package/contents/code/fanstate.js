@@ -37,10 +37,26 @@ function nextThrottleBaseline(current) {
     return current === null || current === undefined ? null : current
 }
 
+function applyStatus(previousThrottleCount, stdout, exitCode) {
+    var result = parseStatus(stdout, exitCode)
+    var complete = exitCode === 0 && result.partsCount >= 5 && result.level !== null && result.level !== ""
+    if (!complete) {
+        result.level = null
+        result.thinkfanRunning = false
+        result.freqMhz = null
+        result.throttleCount = null
+        result.holdState = "unknown"
+    }
+    result.throttleDelta = complete ? throttle(previousThrottleCount, result.throttleCount) : null
+    result.throttleBaseline = complete ? nextThrottleBaseline(result.throttleCount) : null
+    result.throttling = result.throttleDelta !== null && result.throttleDelta > 0
+    return result
+}
+
 function sensorValue(value) {
     return value === null || value === undefined || Number.isNaN(Number(value)) ? null : Math.round(value)
 }
 
 function switchError(exitCode, stderr) {
-    return exitCode === 0 ? "" : "Fan level switch failed"
+    return exitCode === 0 ? "" : "switch-failed"
 }
