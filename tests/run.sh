@@ -470,6 +470,23 @@ box /usr/bin/env TEST_FAIL_STOP_UNIT=thinkpad-fan-hold.service /bin/bash /usr/lo
 check_set_hfail() { [[ $set_hfail_rc -ne 0 ]] && grep -q '^systemctl stop thinkfan.service$' "$WORK/log" && grep -q '^systemctl start thinkfan.service$' "$WORK/log" && ! grep -q '^systemd-run ' "$WORK/log"; }
 report 3 'set restarts thinkfan when the old hold cannot be stopped' check_set_hfail
 
+# F4: a running hold is manual even while the firmware briefly reports auto.
+node - "$ROOT/package/contents/code/fanstate.js" <<'NODE'
+const fs=require('fs'),vm=require('vm'),assert=require('assert'); const c={}; vm.createContext(c); vm.runInContext(fs.readFileSync(process.argv[2],'utf8').split(String.fromCharCode(10)).slice(1).join(String.fromCharCode(10)),c);
+try { assert.equal(c.mode('auto',false,'active'),'manual'); assert.equal(c.mode('auto',true,'inactive'),'automatic'); assert.equal(c.mode('auto',false,'inactive'),'automatic'); process.exit(0); } catch(e) { process.exit(1); }
+NODE
+report 4 'running hold stays manual while the firmware reports auto' test "$?" -eq 0
+
+# F1: hold that stopped with an error is reported by status and flagged by the widget.
+reset_case
+unit_set thinkpad-fan-hold.service failed
+box /bin/bash /usr/local/bin/thinkpad-fan-status >"$WORK/hold-failed.out" 2>/dev/null
+node - "$ROOT/package/contents/code/fanstate.js" "$(cat "$WORK/hold-failed.out")" <<'NODE'
+const fs=require('fs'),vm=require('vm'),assert=require('assert'); const c={}; vm.createContext(c); vm.runInContext(fs.readFileSync(process.argv[2],'utf8').split(String.fromCharCode(10)).slice(1).join(String.fromCharCode(10)),c);
+try { const st=c.parseStatus(process.argv[3],0); assert.equal(st.holdState,'failed'); assert.equal(c.holdFailed(st.holdState),true); assert.equal(c.holdFailed('inactive'),false); process.exit(0); } catch(e) { process.exit(1); }
+NODE
+report 1 'failed hold is reported by status and flagged by the widget' test "$?" -eq 0
+
 # F7: failed and incomplete polls clear old readings and the counter baseline.
 node - "$ROOT/package/contents/code/fanstate.js" <<'NODE'
 const fs=require('fs'),vm=require('vm'),assert=require('assert'); const c={}; vm.createContext(c); vm.runInContext(fs.readFileSync(process.argv[2],'utf8').split(String.fromCharCode(10)).slice(1).join(String.fromCharCode(10)),c);

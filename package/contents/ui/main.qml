@@ -48,6 +48,7 @@ PlasmoidItem {
         var mode = FanState.mode(fanLevel, thinkfanRunning, holdState)
         if (mode === "automatic")
             return thinkfanRunning ? i18n("Mode: automatic (thinkfan)") : i18n("Mode: automatic (firmware)")
+        if (mode === "manual" && fanLevel === "auto") return i18n("Mode: manual (hold is restoring the chosen level)")
         if (mode === "manual") return i18n("Mode: manual, level %1", fanLevel)
         if (mode === "level-unheld") return i18n("Level %1 set, hold is not running", fanLevel)
         return i18n("Fan mode unknown")
@@ -189,6 +190,13 @@ PlasmoidItem {
             visible: root.switchFailure !== ""
             type: Kirigami.MessageType.Error
             text: root.switchFailure
+        }
+
+        Kirigami.InlineMessage {
+            Layout.fillWidth: true
+            visible: FanState.holdFailed(root.holdState)
+            type: Kirigami.MessageType.Warning
+            text: i18n("The fan hold stopped with an error (temperature protection or a fan write failed), so the chosen level was dropped. Details: journalctl -u thinkpad-fan-hold")
         }
 
         Kirigami.Heading {

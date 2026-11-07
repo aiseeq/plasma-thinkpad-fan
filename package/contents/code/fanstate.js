@@ -16,15 +16,23 @@ function parseStatus(stdout, exitCode) {
         result.throttleCount = parts[3] === "unavailable" || Number.isNaN(count) ? null : count
     }
     if (parts.length >= 5)
-        result.holdState = parts[4] === "active" ? "active" : parts[4] === "inactive" ? "inactive" : "unknown"
+        result.holdState = ["active", "inactive", "failed"].indexOf(parts[4]) >= 0 ? parts[4] : "unknown"
     return result
 }
 
+// "automatic" | "manual" | "level-unheld" | "unknown". A running hold means manual even when the
+// firmware has just put the level back to auto: hold restores the chosen level on its next check.
 function mode(level, thinkfanRunning, holdState) {
-    if (thinkfanRunning || level === "auto") return "automatic"
+    if (thinkfanRunning) return "automatic"
     if (holdState === "active") return "manual"
-    if (holdState === "inactive") return "level-unheld"
+    if (level === "auto") return "automatic"
+    if (holdState === "inactive" || holdState === "failed") return "level-unheld"
     return "unknown"
+}
+
+// True when the hold service stopped with an error: the chosen level was dropped.
+function holdFailed(holdState) {
+    return holdState === "failed"
 }
 
 function throttle(previous, current) {

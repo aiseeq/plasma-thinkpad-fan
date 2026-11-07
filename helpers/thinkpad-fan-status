@@ -21,7 +21,8 @@ freq=$(awk '/cpu MHz/{s+=$4; n++} END{if (n) printf "%d", s/n; else print "unava
 count=$(cat "$THROTTLE" 2>/dev/null) || count=unavailable
 [[ "$count" =~ ^[0-9]+$ ]] || count=unavailable
 hold=$(systemctl is-active thinkpad-fan-hold.service 2>/dev/null) || :
-case "$hold" in active|inactive) ;; *) hold=unknown ;; esac
+# failed: hold exited with an error (protection gave up, a write failed) — the widget warns about it.
+case "$hold" in active|inactive|failed) ;; *) hold=unknown ;; esac
 
 printf '%s|%s|%s|%s|%s\n' \
     "$level" \
