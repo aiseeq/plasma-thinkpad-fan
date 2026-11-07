@@ -3,6 +3,7 @@
  * SPDX-License-Identifier: MIT
  */
 import QtQuick
+import "../code/fanstate.js" as FanState
 import QtQuick.Layouts
 import org.kde.plasma.plasmoid
 import org.kde.plasma.components as PlasmaComponents
@@ -40,12 +41,14 @@ PlasmoidItem {
     // Three distinct states: thinkfan drives its curve, the level is handed to the
     // firmware, or a level is pinned manually.
     readonly property bool autoMode: thinkfanRunning || fanLevel === "auto"
-    readonly property string modeText: thinkfanRunning ? i18n("Mode: automatic (thinkfan)")
-                                     : fanLevel === "auto" ? i18n("Mode: automatic (firmware)")
-                                     : i18n("Mode: manual, level %1", fanLevel)
+    property string switchFailure: ""
+    property string holdState: "unknown"
+    readonly property string modeText: FanState.mode(fanLevel, thinkfanRunning, holdState) === "automatic"
+        ? (thinkfanRunning ? i18n("Mode: automatic (thinkfan)") : i18n("Mode: automatic (firmware)"))
+        : i18n("Mode: manual, level %1", fanLevel)
 
-    readonly property int rpm: fanSensor.value !== undefined ? Math.round(fanSensor.value) : 0
-    readonly property int temp: tempSensor.value !== undefined ? Math.round(tempSensor.value) : 0
+    readonly property var rpm: FanState.sensorValue(fanSensor.value)
+    readonly property var temp: FanState.sensorValue(tempSensor.value)
 
     Plasmoid.icon: "sensors"
     toolTipMainText: i18n("Fan: %1 RPM", rpm)
@@ -75,21 +78,21 @@ PlasmoidItem {
         connectedSources: []
 
         onNewData: function(source, data) {
+            if (source !== root.statusHelper)
+                root.switchFailure = FanState.switchError(data["exit code"], data.stderr)
             if (source === root.statusHelper) {
-                root.helperMissing = (data["exit code"] !== 0)
-
-                var parts = (data.stdout || "").trim().split("|")
-                if (parts.length >= 2) {
-                    root.fanLevel = parts[0]
-                    root.thinkfanRunning = (parts[1] === "active")
+                var state = FanState.parseStatus(data.stdout || "", data["exit code"])
+                root.helperMissing = state.helperMissing
+                if (state.partsCount >= 2) {
+                    root.fanLevel = state.level
+                    root.thinkfanRunning = state.thinkfanRunning
+                    if (state.partsCount >= 5)
+                        root.holdState = state.holdState
                 }
-                if (parts.length >= 4) {
-                    root.freqMhz = parseInt(parts[2]) || 0
-
-                    var c = parseInt(parts[3]) || 0
-                    // First sample is only remembered: nothing to compare against yet.
-                    root.throttling = (root.throttleCount >= 0 && c > root.throttleCount)
-                    root.throttleCount = c
+                if (state.partsCount >= 4) {
+                    root.freqMhz = state.freqMhz
+                    root.throttling = FanState.throttle(root.throttleCount, state.throttleCount)
+                    root.throttleCount = state.throttleCount
                 }
             }
             exec.disconnectSource(source)
@@ -102,6 +105,7 @@ PlasmoidItem {
         function setLevel(value) {
             // pkexec + a polkit rule with allow_active=yes: no password prompt for
             // the local session, and no sudoers editing by the user.
+            root.switchFailure = ""
             exec.connectSource("pkexec " + root.setHelper + " " + value)
             refreshTimer.restart()
         }
