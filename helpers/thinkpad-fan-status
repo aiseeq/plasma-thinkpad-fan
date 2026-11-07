@@ -1,10 +1,10 @@
 #!/bin/bash
 # Reports cooling state for the ThinkPad Fan Control plasmoid.
 #
-# Output: <level>|<thinkfan state>|<average CPU MHz>|<thermal throttle counter>
+# Output: <level>|<thinkfan state>|<average CPU MHz>|<thermal throttle counter>|<hold state>
 #
 # The plasmoid compares the throttle counter between polls: a growing counter
-# means the CPU is being throttled right now. We deliberately use *_count and
+# means thermal throttle events occurred since the previous poll. We deliberately use *_count and
 # not *_total_time_ms — the latter stays 0 on several Intel generations
 # (confirmed on Meteor Lake / Core Ultra 155H).
 #
@@ -16,8 +16,16 @@ THROTTLE=/sys/devices/system/cpu/cpu0/thermal_throttle/package_throttle_count
 level=$(awk '/^level:/{print $2}' "$FAN" 2>/dev/null)
 [[ -n "$level" ]] || level="n/a"
 
-printf '%s|%s|%s|%s\n' \
+freq=$(awk '/cpu MHz/{s+=$4; n++} END{if (n) printf "%d", s/n; else print "unavailable"}' /proc/cpuinfo 2>/dev/null)
+[[ -n "$freq" ]] || freq=unavailable
+count=$(cat "$THROTTLE" 2>/dev/null) || count=unavailable
+[[ "$count" =~ ^[0-9]+$ ]] || count=unavailable
+hold=$(systemctl is-active thinkpad-fan-hold.service 2>/dev/null) || :
+case "$hold" in active|inactive) ;; *) hold=unknown ;; esac
+
+printf '%s|%s|%s|%s|%s\n' \
     "$level" \
     "$(systemctl is-active thinkfan.service 2>/dev/null)" \
-    "$(awk '/cpu MHz/{s+=$4; n++} END{printf "%d", (n ? s/n : 0)}' /proc/cpuinfo)" \
-    "$(cat "$THROTTLE" 2>/dev/null || echo 0)"
+    "$freq" \
+    "$count" \
+    "$hold"

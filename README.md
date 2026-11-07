@@ -14,16 +14,18 @@ This one does both.
 </p>
 
 In the panel: temperature on top, CPU frequency below — the frequency turns red
-the moment the CPU is thermally throttled. Click it for readings and fan levels.
+when thermal throttle events occur between polls. The first poll establishes a
+baseline, so the event count is unknown until the next poll. Click for readings
+and fan levels.
 
 ## Features
 
 - fan RPM, temperature, CPU frequency in the panel (second line is configurable)
-- **throttling indicator** — the frequency turns red the moment the CPU is
-  thermally throttled
+- **throttling indicator** — the frequency turns red when thermal throttle
+  events occur during the poll interval
 - one-click fan levels: `automatic`, `0`–`7`, `full speed`
-- honest mode reporting: automatic via thinkfan, automatic via firmware, or
-  manually pinned — these are three different states and the widget says which
+- mode reporting distinguishes automatic via thinkfan, automatic via firmware,
+  a level held manually, a level without a running hold, and unknown state
 - levels are *held*: the firmware and thinkfan both overwrite a manually set
   level within seconds, so a helper watches it and puts it back
 - safety net: a pinned level is released if the CPU exceeds 90 °C
@@ -50,7 +52,10 @@ systemctl --user restart plasma-plasmashell
 
 Then right-click the panel → *Add Widgets* → **ThinkPad Fan Control**.
 
-Uninstall with `./install.sh --uninstall`.
+Uninstall with `./install.sh --uninstall`. It stops the hold and restores
+automatic fan control (starting thinkfan when installed) before removing the
+widget and helpers. If restoration fails, it reports the error and leaves the
+installed components in place.
 
 ## Configuration
 
@@ -66,7 +71,7 @@ busctl --user call org.kde.ksystemstats1 /org/kde/ksystemstats1 \
 
 | Component | Role |
 | --- | --- |
-| `thinkpad-fan-status` | unprivileged; reports level, thinkfan state, frequency, throttle counter |
+| `thinkpad-fan-status` | unprivileged; reports level, thinkfan state, frequency, throttle counter, hold state |
 | `thinkpad-fan-set` | privileged; validates the argument and switches mode |
 | `thinkpad-fan-hold` | systemd unit; keeps the chosen level from being overwritten |
 
@@ -93,14 +98,22 @@ the EC's spin-up ramp, and a rewrite every 100 ms left the fan stuck at
 
 Tune it with environment variables in the unit:
 `THINKPAD_FAN_INTERVAL` (seconds, default `1`) and `THINKPAD_FAN_TCRIT`
-(°C, default `90`, `0` disables the safety net).
+(°C, default `90`; temperatures are compared in millidegrees and protection
+triggers strictly above the threshold; `0` disables the safety net). If the
+temperature sensor becomes unavailable, the hold reports an error and restores
+automatic control.
+
+The status helper prints five pipe-separated fields: fan level, thinkfan state,
+average CPU frequency in MHz, thermal throttle event counter, and hold service
+state (`active`, `inactive`, or `unknown`). Unavailable frequency or counter
+readings are printed as `unavailable` rather than zero.
 
 ## Known limitations
 
-- **The throttling indicator sees thermal throttling only.** It is derived from
-  `package_throttle_count`; a power (RAPL/TDP) limit does not raise that counter
-  even though it holds the frequency down. If the indicator says *no* while the
-  frequency sits well below the maximum, you are power-limited, not overheating.
+- **The throttling indicator sees thermal throttle events only.** It reports
+  growth in `package_throttle_count` between polls; the first poll is unknown.
+  A power (RAPL/TDP) limit does not raise that counter even though it holds the
+  frequency down.
 - `package_throttle_total_time_ms` is always 0 on some Intel generations
   (confirmed on Meteor Lake / Core Ultra 155H), which is why the event counter is
   used instead.

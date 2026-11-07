@@ -28,14 +28,15 @@ PlasmoidItem {
 
     property string fanLevel: "—"
     property bool thinkfanRunning: false
-    property int freqMhz: 0
+    property var freqMhz: null
     property bool helperMissing: false
 
     // Throttling is derived from the growth of the kernel event counter between
     // polls: package_throttle_total_time_ms stays 0 on several Intel generations,
-    // while the counter is reliable. Note this reflects *thermal* throttling only —
+    // while the counter records thermal events between polls. This reflects thermal throttling only —
     // a power (RAPL) limit does not raise it, but does hold the frequency down.
-    property int throttleCount: -1
+    property var throttleCount: null
+    property var throttleDelta: null
     property bool throttling: false
 
     // Three distinct states: thinkfan drives its curve, the level is handed to the
@@ -43,15 +44,22 @@ PlasmoidItem {
     readonly property bool autoMode: thinkfanRunning || fanLevel === "auto"
     property string switchFailure: ""
     property string holdState: "unknown"
-    readonly property string modeText: FanState.mode(fanLevel, thinkfanRunning, holdState) === "automatic"
-        ? (thinkfanRunning ? i18n("Mode: automatic (thinkfan)") : i18n("Mode: automatic (firmware)"))
-        : i18n("Mode: manual, level %1", fanLevel)
+    readonly property string modeText: {
+        var mode = FanState.mode(fanLevel, thinkfanRunning, holdState)
+        if (mode === "automatic")
+            return thinkfanRunning ? i18n("Mode: automatic (thinkfan)") : i18n("Mode: automatic (firmware)")
+        if (mode === "manual") return i18n("Mode: manual, level %1", fanLevel)
+        if (mode === "level-unheld") return i18n("Level %1 set, hold is not running", fanLevel)
+        return i18n("Fan mode unknown")
+    }
 
     readonly property var rpm: FanState.sensorValue(fanSensor.value)
     readonly property var temp: FanState.sensorValue(tempSensor.value)
+    readonly property string rpmText: rpm === null ? i18n("n/a") : rpm
+    readonly property string tempText: temp === null ? "—" : temp
 
     Plasmoid.icon: "sensors"
-    toolTipMainText: i18n("Fan: %1 RPM", rpm)
+    toolTipMainText: rpm === null ? i18n("Fan: n/a") : i18n("Fan: %1 RPM", rpm)
     toolTipSubText: modeText
 
     preferredRepresentation: compactRepresentation
@@ -78,8 +86,12 @@ PlasmoidItem {
         connectedSources: []
 
         onNewData: function(source, data) {
-            if (source !== root.statusHelper)
-                root.switchFailure = FanState.switchError(data["exit code"], data.stderr)
+            if (source !== root.statusHelper) {
+                if (data["exit code"] === 0)
+                    root.switchFailure = ""
+                else
+                    root.switchFailure = i18n(FanState.switchError(data["exit code"], data.stderr))
+            }
             if (source === root.statusHelper) {
                 var state = FanState.parseStatus(data.stdout || "", data["exit code"])
                 root.helperMissing = state.helperMissing
@@ -91,8 +103,9 @@ PlasmoidItem {
                 }
                 if (state.partsCount >= 4) {
                     root.freqMhz = state.freqMhz
-                    root.throttling = FanState.throttle(root.throttleCount, state.throttleCount)
-                    root.throttleCount = state.throttleCount
+                    root.throttleDelta = FanState.throttle(root.throttleCount, state.throttleCount)
+                    root.throttling = root.throttleDelta !== null && root.throttleDelta > 0
+                    root.throttleCount = FanState.nextThrottleBaseline(state.throttleCount)
                 }
             }
             exec.disconnectSource(source)
@@ -105,7 +118,6 @@ PlasmoidItem {
         function setLevel(value) {
             // pkexec + a polkit rule with allow_active=yes: no password prompt for
             // the local session, and no sudoers editing by the user.
-            root.switchFailure = ""
             exec.connectSource("pkexec " + root.setHelper + " " + value)
             refreshTimer.restart()
         }
@@ -140,7 +152,7 @@ PlasmoidItem {
 
             PlasmaComponents.Label {
                 Layout.alignment: Qt.AlignHCenter
-                text: root.temp + "°"
+                text: root.temp === null ? "—" : root.temp + "°"
                 font.pointSize: Kirigami.Theme.smallFont.pointSize
                 lineHeight: 0.9
             }
@@ -150,13 +162,14 @@ PlasmoidItem {
                 visible: root.compactSecondLine !== "temperature"
                 text: {
                     if (root.compactSecondLine === "rpm")
-                        return root.rpm
+                        return root.rpm === null ? "n/a" : root.rpm
+                    if (root.freqMhz === null) return "n/a"
                     return root.freqMhz >= 1000 ? (root.freqMhz / 1000).toFixed(1) + "G"
                                                 : root.freqMhz + "M"
                 }
                 font.pointSize: Kirigami.Theme.smallFont.pointSize
                 font.bold: root.throttling
-                // Red means the CPU is being throttled right now.
+                // Red means throttle events occurred during the last poll interval.
                 color: root.throttling ? Kirigami.Theme.negativeTextColor
                                        : Kirigami.Theme.textColor
                 lineHeight: 0.9
@@ -176,28 +189,35 @@ PlasmoidItem {
             text: i18n("Helper scripts are missing. Run install.sh from the project.")
         }
 
+        Kirigami.InlineMessage {
+            Layout.fillWidth: true
+            visible: root.switchFailure !== ""
+            type: Kirigami.MessageType.Error
+            text: root.switchFailure
+        }
+
         Kirigami.Heading {
             Layout.fillWidth: true
             level: 2
-            text: i18n("%1 RPM", root.rpm)
+            text: root.rpm === null ? i18n("Fan: n/a") : i18n("%1 RPM", root.rpm)
         }
 
         PlasmaComponents.Label {
             Layout.fillWidth: true
-            text: i18n("Temperature: %1 °C", root.temp)
+            text: root.temp === null ? i18n("Temperature: —") : i18n("Temperature: %1 °C", root.temp)
         }
 
         PlasmaComponents.Label {
             Layout.fillWidth: true
             visible: Plasmoid.configuration.showFrequency
-            text: i18n("Frequency: %1 MHz", root.freqMhz)
+            text: root.freqMhz === null ? i18n("Frequency: n/a") : i18n("Frequency: %1 MHz", root.freqMhz)
         }
 
         PlasmaComponents.Label {
             Layout.fillWidth: true
             visible: Plasmoid.configuration.showThrottling
-            text: root.throttling ? i18n("Throttling: YES (%1 events)", root.throttleCount)
-                                  : i18n("Throttling: no")
+            text: root.throttleDelta === null ? i18n("Throttling events since last poll: unknown")
+                : i18n("Throttling events since last poll: %1", root.throttleDelta)
             color: root.throttling ? Kirigami.Theme.negativeTextColor
                                    : Kirigami.Theme.positiveTextColor
         }

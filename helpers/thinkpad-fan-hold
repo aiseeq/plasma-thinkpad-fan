@@ -1,21 +1,20 @@
 #!/bin/bash
 # Keeps the ThinkPad fan pinned at a level.
 #
-# The embedded controller (and thinkfan, if running) happily overwrite a manually
-# set level, so a single write is not enough — we keep watching and restore it.
-# We only write when the level actually changed: on some fans (seen on the
-# ThinkPad E16 Gen 2 replacement cooler) every write restarts the EC's spin-up
-# ramp, so a blind rewrite every 100 ms keeps the fan stuck at ~2000 RPM
-# instead of the requested speed.
+# The embedded controller (and thinkfan, if running) can overwrite a manual
+# level, so this helper watches it and restores it when it changes. We write only
+# when the level differs: on some fans, every write restarts the EC's spin-up
+# ramp, and repeated writes kept the fan near 2000 RPM instead of the requested
+# speed.
 #
-# Safety net: if the package temperature exceeds THINKPAD_FAN_TCRIT, control is
-# handed back to automatic mode. Set THINKPAD_FAN_TCRIT=0 to disable (not advised
-# for low levels — a pinned "level 0" means no airflow at all).
+# If temperature protection is unavailable or a temperature read fails, the
+# hold is released and automatic control is restored. Set THINKPAD_FAN_TCRIT=0
+# to disable protection (not advised for low levels — level 0 means no airflow).
 set -u
 
 FAN=/proc/acpi/ibm/fan
 INTERVAL=${THINKPAD_FAN_INTERVAL:-1}     # seconds between checks
-TCRIT=${THINKPAD_FAN_TCRIT:-90}          # °C, 0 disables the safety net
+TCRIT=${THINKPAD_FAN_TCRIT:-90}          # °C, compared in millidegrees
 
 hwmon_by_name() {
     local n
@@ -33,18 +32,44 @@ esac
 
 current_level() { awk '/^level:/{print $2}' "$FAN" 2>/dev/null; }
 
-CORE=$(hwmon_by_name coretemp) || CORE=""
-[[ -n "$CORE" && -r "$CORE/temp1_input" ]] || TCRIT=0
+restore_automatic() {
+    local failed=0
+    if ! echo "level auto" > "$FAN"; then
+        echo "${0##*/}: failed to restore automatic fan level" >&2
+        failed=1
+    fi
+    if systemctl list-unit-files thinkfan.service >/dev/null 2>&1; then
+        if ! systemctl start thinkfan.service; then
+            echo "${0##*/}: failed to start thinkfan.service" >&2
+            failed=1
+        fi
+    fi
+    return "$failed"
+}
+
+fail_protection() {
+    echo "${0##*/}: temperature protection unavailable: $1; restoring automatic control" >&2
+    restore_automatic || :
+    exit 1
+}
+
+CORE=""
+if (( TCRIT > 0 )); then
+    CORE=$(hwmon_by_name coretemp) || CORE=""
+    [[ -n "$CORE" && -r "$CORE/temp1_input" ]] || fail_protection "coretemp sensor is missing or unreadable"
+fi
 
 while true; do
-    [[ "$(current_level)" == "$want" ]] || echo "$cmd" > "$FAN"
+    [[ "$(current_level)" == "$want" ]] || echo "$cmd" > "$FAN" || exit 1
 
     if (( TCRIT > 0 )); then
-        read -r t < "$CORE/temp1_input"
-        if (( t / 1000 > TCRIT )); then
+        [[ -r "$CORE/temp1_input" ]] || fail_protection "coretemp sensor became unreadable"
+        if ! read -r t < "$CORE/temp1_input" || [[ ! "$t" =~ ^[0-9]+$ ]]; then
+            fail_protection "could not read coretemp temperature"
+        fi
+        if (( t > TCRIT * 1000 )); then
             echo "${0##*/}: $(( t / 1000 ))°C above ${TCRIT}°C — restoring automatic mode" >&2
-            echo "level auto" > "$FAN"
-            systemctl start thinkfan.service 2>/dev/null
+            restore_automatic || exit 1
             exit 0
         fi
     fi

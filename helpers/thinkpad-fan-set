@@ -18,25 +18,53 @@ if [[ ! -w "$FAN" ]]; then
     exit 1
 fi
 
-stop_hold() {
-    systemctl stop thinkpad-fan-hold.service 2>/dev/null
-    systemctl reset-failed thinkpad-fan-hold.service 2>/dev/null
+stop_unit_if_loaded() {
+    local unit=$1 state status_rc
+    state=$(systemctl is-active "$unit" 2>/dev/null)
+    status_rc=$?
+
+    case "$state" in
+        inactive)
+            # systemd reports an unloaded transient unit as inactive with rc 4.
+            [[ $status_rc -eq 4 ]] && return 0
+            ;;
+        unknown)
+            [[ $status_rc -eq 4 ]] && return 0
+            ;;
+        active|failed) ;;
+        *)
+            echo "failed to determine state of $unit" >&2
+            return 1
+            ;;
+    esac
+
+    if [[ "$state" == failed ]]; then
+        systemctl reset-failed "$unit" 2>/dev/null || {
+            echo "failed to reset failed state of $unit" >&2
+            return 1
+        }
+    fi
+    systemctl stop "$unit" 2>/dev/null || {
+        echo "failed to stop $unit" >&2
+        return 1
+    }
 }
 
 case "${1:-}" in
     auto)
-        stop_hold
-        echo "level auto" > "$FAN"
+        stop_unit_if_loaded thinkpad-fan-hold.service || exit 1
+        echo "level auto" > "$FAN" || { echo "failed to write automatic fan level" >&2; exit 1; }
         # thinkfan is optional: plenty of setups leave the curve to the firmware.
-        systemctl list-unit-files thinkfan.service &>/dev/null &&
-            systemctl start thinkfan.service 2>/dev/null
+        if systemctl list-unit-files thinkfan.service &>/dev/null; then
+            systemctl start thinkfan.service 2>/dev/null || { echo "failed to start thinkfan.service" >&2; exit 1; }
+        fi
         ;;
     [0-7]|full)
-        systemctl stop thinkfan.service 2>/dev/null
-        stop_hold
+        stop_unit_if_loaded thinkfan.service || exit 1
+        stop_unit_if_loaded thinkpad-fan-hold.service || exit 1
         systemd-run --unit=thinkpad-fan-hold \
             --description="Hold ThinkPad fan at level $1" \
-            "$HOLD" "$1" >/dev/null
+            "$HOLD" "$1" >/dev/null || { echo "failed to start fan hold" >&2; exit 1; }
         ;;
     *)
         echo "usage: ${0##*/} auto|0-7|full" >&2

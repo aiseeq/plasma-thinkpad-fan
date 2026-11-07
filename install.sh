@@ -26,10 +26,14 @@ need_root() {
 
 if [[ "${1:-}" == "--uninstall" ]]; then
     need_root
+    if [[ -x /usr/local/bin/thinkpad-fan-set ]]; then
+        $SUDO /usr/local/bin/thinkpad-fan-set auto || die "failed to restore automatic fan control; nothing was uninstalled"
+    else
+        echo "warning: /usr/local/bin/thinkpad-fan-set is missing; nothing to restore before uninstall" >&2
+    fi
     kpackagetool6 --type Plasma/Applet --remove "$APPLET_ID" 2>/dev/null || true
     for h in "${HELPERS[@]}"; do $SUDO rm -f "/usr/local/bin/$h"; done
     $SUDO rm -f "/usr/share/polkit-1/actions/$POLICY"
-    $SUDO systemctl stop thinkpad-fan-hold.service 2>/dev/null || true
     echo "removed. Restart the panel: systemctl --user restart plasma-plasmashell"
     exit 0
 fi
