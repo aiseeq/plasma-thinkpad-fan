@@ -212,13 +212,13 @@ PlasmoidItem {
 
         PlasmaComponents.Label {
             Layout.fillWidth: true
-            visible: Plasmoid.configuration.showFrequency
+            visible: Plasmoid.configuration.showFrequency !== false  // undefined on the first pass; default true
             text: root.freqMhz === null ? i18n("Frequency: n/a") : i18n("Frequency: %1 MHz", root.freqMhz)
         }
 
         PlasmaComponents.Label {
             Layout.fillWidth: true
-            visible: Plasmoid.configuration.showThrottling
+            visible: Plasmoid.configuration.showThrottling !== false  // undefined on the first pass; default true
             text: root.throttleDelta === null ? i18n("Throttling events since last poll: unknown")
                 : i18n("Throttling events since last poll: %1", root.throttleDelta)
             color: root.throttling ? Kirigami.Theme.negativeTextColor
