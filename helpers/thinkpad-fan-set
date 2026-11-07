@@ -51,17 +51,17 @@ stop_unit_if_loaded() {
 }
 
 thinkfan_unit_installed() {
-    local output rc
-    output=$(systemctl list-unit-files thinkfan.service 2>&1)
-    rc=$?
-    if [[ $rc -eq 0 ]]; then
-        return 0
-    fi
-    if grep -Eqi '0 unit files listed|could not be found|not found' <<< "$output"; then
-        return 1
-    fi
-    echo "failed to query thinkfan.service: ${output:-systemctl returned status $rc}" >&2
-    return 2
+    # LoadState is machine-readable and not localized: loaded, not-found, masked, ...
+    local state
+    state=$(systemctl show -p LoadState --value thinkfan.service 2>/dev/null) || {
+        echo "failed to query thinkfan.service" >&2
+        return 2
+    }
+    case "$state" in
+        loaded) return 0 ;;
+        not-found|masked) return 1 ;;
+        *) echo "failed to query thinkfan.service: LoadState '${state}'" >&2; return 2 ;;
+    esac
 }
 
 start_thinkfan_if_installed() {
@@ -92,7 +92,11 @@ case "${1:-}" in
         ;;
     [0-7]|full)
         stop_unit_if_loaded thinkfan.service || exit 1
-        stop_unit_if_loaded thinkpad-fan-hold.service || exit 1
+        if ! stop_unit_if_loaded thinkpad-fan-hold.service; then
+            # thinkfan is already stopped: give it back before failing.
+            start_thinkfan_if_installed || echo "failed to restart thinkfan after hold stop failure" >&2
+            exit 1
+        fi
         if ! systemd-run --no-block --unit=thinkpad-fan-hold \
             --description="Hold ThinkPad fan at level $1" \
             "$HOLD" "$1" >/dev/null; then

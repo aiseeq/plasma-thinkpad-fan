@@ -39,7 +39,20 @@ case "$base" in
       fi
       exit "$rc"
     fi
+    if [[ $op == stop && -n ${TEST_FAIL_STOP_UNIT:-} && $unit == "$TEST_FAIL_STOP_UNIT" ]]; then
+      echo "Failed to stop $unit: Access denied" >&2; exit 1
+    fi
     case "$op" in
+      show)
+        # systemctl show -p LoadState --value <unit>
+        unit=${!#}
+        if [[ $unit == thinkfan.service ]]; then
+          [[ ${TEST_THINKFAN_INSTALLED:-yes} == no ]] && echo not-found || echo loaded
+        else
+          state=$(unit_state "$unit")
+          [[ -n $state && $state != unloaded ]] && echo loaded || echo not-found
+        fi
+        exit 0 ;;
       list-unit-files)
         if [[ $unit == thinkfan.service && ${TEST_THINKFAN_INSTALLED:-yes} == no ]]; then
           echo 'Unit thinkfan.service could not be found.' >&2; exit 1
@@ -418,24 +431,44 @@ report 5 'uninstall without executable set helper reports manual recovery and re
 
 # F8 and set auto must distinguish a missing optional unit from systemd failure.
 reset_case
-box /usr/bin/env TEST_SYSTEMCTL_LIST_UNIT_FILES_RC=1 \
-  TEST_SYSTEMCTL_LIST_UNIT_FILES_OUTPUT='Failed to connect to bus' \
-  /bin/bash /usr/local/bin/thinkpad-fan-set auto >"$WORK/set-list-error.out" 2>&1; set_list_error_rc=$?
+box /usr/bin/env TEST_SYSTEMCTL_SHOW_RC=1 /bin/bash /usr/local/bin/thinkpad-fan-set auto >"$WORK/set-list-error.out" 2>&1; set_list_error_rc=$?
 # shellcheck disable=SC2329
 check_set_list_error() {
   [[ $set_list_error_rc -ne 0 ]] && grep -Eqi '(query|check|list).*thinkfan|thinkfan.*(query|check|list)' "$WORK/set-list-error.out"
 }
-report 8 'set auto reports systemd list-unit-files failure' check_set_list_error
+report 8 'set auto reports a failed systemd query for thinkfan' check_set_list_error
 reset_case
 mkdir -p "$WORK/hwmon/hwmon0"; echo coretemp > "$WORK/hwmon/hwmon0/name"; echo 91000 > "$WORK/hwmon/hwmon0/temp1_input"
-box /usr/bin/env THINKPAD_FAN_INTERVAL=0.02 TEST_SYSTEMCTL_LIST_UNIT_FILES_RC=1 \
-  TEST_SYSTEMCTL_LIST_UNIT_FILES_OUTPUT='Failed to connect to bus' \
-  /bin/bash "$ROOT/helpers/thinkpad-fan-hold" 0 >"$WORK/hold-list-error.out" 2>&1; hold_list_error_rc=$?
+box /usr/bin/env THINKPAD_FAN_INTERVAL=0.02 TEST_SYSTEMCTL_SHOW_RC=1 /bin/bash "$ROOT/helpers/thinkpad-fan-hold" 0 >"$WORK/hold-list-error.out" 2>&1; hold_list_error_rc=$?
 # shellcheck disable=SC2329
 check_hold_list_error() {
   [[ $hold_list_error_rc -ne 0 ]] && grep -Eqi '(query|check|list).*thinkfan|thinkfan.*(query|check|list)' "$WORK/hold-list-error.out"
 }
-report 8 'hold reports systemd list-unit-files failure during recovery' check_hold_list_error
+report 8 'hold reports a failed systemd query for thinkfan during recovery' check_hold_list_error
+
+# F8: a thinkfan unit that is not found is told by LoadState, whatever the language of systemctl messages.
+reset_case
+box /usr/bin/env TEST_THINKFAN_INSTALLED=no LANG=de_DE.UTF-8 /bin/bash /usr/local/bin/thinkpad-fan-set auto >"$WORK/set-noth.out" 2>&1; set_noth_rc=$?
+# shellcheck disable=SC2329
+check_set_noth() { [[ $set_noth_rc -eq 0 && $(fan_level) == auto ]] && grep -q '^systemctl show -p LoadState --value thinkfan.service$' "$WORK/log"; }
+report 8 'set auto without thinkfan is decided by LoadState' check_set_noth
+
+# F1/F8: hold that cannot write its level gives control back instead of vanishing.
+reset_case
+printf 'level: 3\n' > "$WORK/fan"; chmod 444 "$WORK/fan"
+box /usr/bin/env THINKPAD_FAN_TCRIT=0 THINKPAD_FAN_INTERVAL=0.02 /bin/bash "$ROOT/helpers/thinkpad-fan-hold" 0 >"$WORK/hold-wfail.out" 2>&1; hold_wfail_rc=$?
+chmod 644 "$WORK/fan"
+# shellcheck disable=SC2329
+check_hold_wfail() { [[ $hold_wfail_rc -ne 0 && $hold_wfail_rc -ne 124 ]] && grep -q 'failed to write fan level' "$WORK/hold-wfail.out" && grep -q '^systemctl start thinkfan.service$' "$WORK/log"; }
+report 1 'hold write failure restores automatic control' check_hold_wfail
+
+# F3: failing to stop the old hold after thinkfan was stopped gives thinkfan back.
+reset_case
+unit_set thinkfan.service active; unit_set thinkpad-fan-hold.service active
+box /usr/bin/env TEST_FAIL_STOP_UNIT=thinkpad-fan-hold.service /bin/bash /usr/local/bin/thinkpad-fan-set 3 >"$WORK/set-hfail.out" 2>&1; set_hfail_rc=$?
+# shellcheck disable=SC2329
+check_set_hfail() { [[ $set_hfail_rc -ne 0 ]] && grep -q '^systemctl stop thinkfan.service$' "$WORK/log" && grep -q '^systemctl start thinkfan.service$' "$WORK/log" && ! grep -q '^systemd-run ' "$WORK/log"; }
+report 3 'set restarts thinkfan when the old hold cannot be stopped' check_set_hfail
 
 # F7: failed and incomplete polls clear old readings and the counter baseline.
 node - "$ROOT/package/contents/code/fanstate.js" <<'NODE'

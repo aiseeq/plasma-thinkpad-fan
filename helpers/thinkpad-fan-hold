@@ -33,17 +33,17 @@ esac
 current_level() { awk '/^level:/{print $2}' "$FAN" 2>/dev/null; }
 
 thinkfan_unit_installed() {
-    local output rc
-    output=$(systemctl list-unit-files thinkfan.service 2>&1)
-    rc=$?
-    if [[ $rc -eq 0 ]]; then
-        return 0
-    fi
-    if grep -Eqi '0 unit files listed|could not be found|not found' <<< "$output"; then
-        return 1
-    fi
-    echo "${0##*/}: failed to query thinkfan.service: ${output:-systemctl returned status $rc}" >&2
-    return 2
+    # LoadState is machine-readable and not localized: loaded, not-found, masked, ...
+    local state
+    state=$(systemctl show -p LoadState --value thinkfan.service 2>/dev/null) || {
+        echo "${0##*/}: failed to query thinkfan.service" >&2
+        return 2
+    }
+    case "$state" in
+        loaded) return 0 ;;
+        not-found|masked) return 1 ;;
+        *) echo "${0##*/}: failed to query thinkfan.service: LoadState '${state}'" >&2; return 2 ;;
+    esac
 }
 
 restore_automatic() {
@@ -79,7 +79,11 @@ if (( TCRIT > 0 )); then
 fi
 
 while true; do
-    [[ "$(current_level)" == "$want" ]] || echo "$cmd" > "$FAN" || exit 1
+    if [[ "$(current_level)" != "$want" ]] && ! echo "$cmd" > "$FAN"; then
+        echo "${0##*/}: failed to write fan level; restoring automatic control" >&2
+        restore_automatic || :
+        exit 1
+    fi
 
     if (( TCRIT > 0 )); then
         [[ -r "$CORE/temp1_input" ]] || fail_protection "coretemp sensor became unreadable"
