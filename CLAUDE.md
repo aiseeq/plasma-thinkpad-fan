@@ -1,4 +1,4 @@
-<!-- lex: собран из /home/aisee/.claude/codex/manifest/git-plasma%2Dthinkpad%2Dfan-CLAUDE.md.yaml. Правь фрагменты в /home/aisee/.claude/codex/frag и запусти `lex build --codex /home/aisee/.claude/codex`; правку прямо в этом файле перенеси во фрагменты: `lex absorb --codex /home/aisee/.claude/codex <этот файл>` -->
+<!-- lex: собран из ~/.claude/codex/manifest/git-plasma%2Dthinkpad%2Dfan-CLAUDE.md.yaml. Правь фрагменты в ~/.claude/codex/frag и запусти `lex build --codex ~/.claude/codex`; правку прямо в этом файле перенеси во фрагменты: `lex absorb --codex ~/.claude/codex <этот файл>` -->
 # plasma-thinkpad-fan
 
 Plasma 6 panel widget (QML, `package/`) plus bash helpers in `/usr/local/bin` (`helpers/`) and a polkit rule (`polkit/`); layout and roles — `README.md`. Public, MIT: nothing personal in the repo.
