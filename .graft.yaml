@@ -1,0 +1,41 @@
+# Коммит виджета: graft commit -m "…" — гейт, git add -A, проверки, коммит, push.
+# Живая проверка на ноутбуке при изменении QML или helper в гейт не входит: она ручная (CLAUDE.md).
+schema: 1
+graft: '>=2.93.0'
+
+tasks:
+  syntax:
+    desc: bash -n по каждому скрипту (с несколькими именами bash -n проверяет только первый)
+    run:
+      - bash -n install.sh
+      - bash -n make-plasmoid.sh
+      - bash -n helpers/thinkpad-fan-hold
+      - bash -n helpers/thinkpad-fan-set
+      - bash -n helpers/thinkpad-fan-status
+      - bash -n tests/run.sh
+  shellcheck:
+    desc: shellcheck по всем скриптам
+    run:
+      - shellcheck install.sh make-plasmoid.sh helpers/thinkpad-fan-hold helpers/thinkpad-fan-set helpers/thinkpad-fan-status tests/run.sh
+  test:
+    desc: изолированный стенд хелперов и fanstate.js (bwrap, заглушки systemd), F1–F9 в tests/README.md
+    run:
+      - bash tests/run.sh
+
+gate:
+  - task: syntax
+  - task: shellcheck
+  - task: test
+
+version:
+  mode: none
+  reason: 'версия виджета — в package/metadata.json, её поднимают при выпуске файла для KDE Store'
+
+checks:
+  large_files:
+    max_binary_bytes: 1048576
+    max_text_bytes: 1048576
+    binary_extensions: [png, jpg, jpeg, gif, webp, plasmoid]
+
+lock:
+  scope: worktree
