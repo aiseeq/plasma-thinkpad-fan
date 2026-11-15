@@ -5,6 +5,7 @@ Plasma 6 panel widget (QML, `package/`) plus bash helpers in `/usr/local/bin` (`
 
 - Install on this laptop — `./install.sh` as the user (it asks for sudo itself), then `systemctl --user restart plasma-plasmashell`; remove — `./install.sh --uninstall`. KDE Store file — `./make-plasmoid.sh` → `dist/`, upload texts — `docs/STORE.md`.
 - No `.graft.yaml`, no gate: commit with plain git on `main`. Before it — `bash -n` and `shellcheck` on changed scripts, and a live check on the laptop for a QML or helper change (the widget shows the level, the fan follows).
+  Зачем: agent does not look for graft tasks in a small QML/bash widget that has none, and still checks scripts before the commit
 - `Plasmoid.configuration.*` is empty on the first binding pass: read it through properties with a fallback, or the sensors bind to `undefined` for good (0 °C).
 - Throttling — by the growth of `package_throttle_count`; `*_total_time_ms` is always 0 on Meteor Lake.
 - The tachometer in `/proc/acpi/ibm/fan` lies (300/600/2300 while spinning): measure RPM at `/sys/class/hwmon/hwmon*/fan1_input` of the hwmon named `thinkpad`.
