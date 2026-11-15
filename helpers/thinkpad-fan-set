@@ -13,11 +13,6 @@ set -u
 FAN=/proc/acpi/ibm/fan
 HOLD=/usr/local/bin/thinkpad-fan-hold
 
-if [[ ! -w "$FAN" ]]; then
-    echo "$FAN is not writable — is thinkpad_acpi loaded with fan_control=1?" >&2
-    exit 1
-fi
-
 stop_unit_if_loaded() {
     local unit=$1 state status_rc
     state=$(systemctl is-active "$unit" 2>/dev/null)
@@ -88,6 +83,30 @@ set_automatic() {
 
 case "${1:-}" in
     auto)
+        ;;
+    [0-7]|full)
+        ;;
+    *)
+        echo "usage: ${0##*/} auto|0-7|full" >&2
+        exit 2
+        ;;
+esac
+
+# pkexec runs this helper as root. Hold the lock across every service and fan
+# operation so a later request cannot interleave with an earlier transition.
+exec 9>/run/thinkpad-fan-set.lock
+flock -x 9 || {
+    echo "failed to lock fan switch helper" >&2
+    exit 1
+}
+
+if [[ ! -w "$FAN" ]]; then
+    echo "$FAN is not writable — is thinkpad_acpi loaded with fan_control=1?" >&2
+    exit 1
+fi
+
+case "${1:-}" in
+    auto)
         set_automatic || exit 1
         ;;
     [0-7]|full)
@@ -128,9 +147,5 @@ case "${1:-}" in
             set_automatic || echo "failed to restore automatic fan control after hold failure" >&2
             exit 1
         fi
-        ;;
-    *)
-        echo "usage: ${0##*/} auto|0-7|full" >&2
-        exit 2
         ;;
 esac

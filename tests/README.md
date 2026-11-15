@@ -9,5 +9,6 @@
 - F6 uses one numeric contract: `throttle(previous, current)` returns the event delta, `0` for no new events, and `null` without a baseline; samples are 10, 11, 11.
 - F7 checks unavailable sensors and the `unavailable` counter marker differ from real zeros, including resetting the counter baseline after failed or incomplete status polls.
 - F8 checks auto-write failure, failure to start installed thinkfan, valid firmware automation when `list-unit-files` reports thinkfan absent, and visible errors when querying unit files fails; a start call is not required when thinkfan is absent.
+- F9 checks that concurrent `thinkpad-fan-set` calls serialize their systemd and fan operations, and that only the latest switch request can update the widget's result message. The first call sleeps in its first `systemctl stop` (`TEST_SYSTEMCTL_STOP_SLEEP`) and the second starts only after that line is logged; `FAN_TEST_CALL` tags each call's stub log lines.
 
 The systemd stub models loaded unit state in `$WORK/units`: successful `systemd-run` loads an active transient unit; stopping an unloaded unit returns 5, resetting an unloaded unit returns 1, and `is-active` returns the systemd word and status for active, inactive, failed, or unloaded state. Per-operation environment overrides can inject command failures.

@@ -10,7 +10,8 @@ command -v bwrap >/dev/null || fail_setup "bwrap не найден"
 command -v node >/dev/null || fail_setup "node не найден"
 BWRAP=$(command -v bwrap)
 :
-mkdir -p "$WORK/hwmon" "$WORK/empty" "$WORK/bin" "$WORK/lib" "$WORK/throttle" "$WORK/units"
+mkdir -p "$WORK/hwmon" "$WORK/empty" "$WORK/bin" "$WORK/lib" "$WORK/throttle" "$WORK/units" "$WORK/run"
+touch "$WORK/run/thinkpad-fan-set.lock"
 printf 'level: 0\n' > "$WORK/fan"
 unit_file() { printf '%s/%s' "$WORK/units" "$1"; }
 unit_set() { printf '%s\n' "$2" > "$(unit_file "$1")"; }
@@ -21,7 +22,8 @@ cat > "$WORK/lib/logger" <<'STUB'
 #!/bin/bash
 base=${0##*/}
 prefix=${FAN_TEST_SUDO_CONTEXT:+sudo-context }
-printf '%s%s %s\n' "$prefix" "$base" "$*" >> "$FAN_TEST_LOG"
+call=${FAN_TEST_CALL:+$FAN_TEST_CALL }
+printf '%s%s%s %s\n' "$prefix" "$call" "$base" "$*" >> "$FAN_TEST_LOG"
 unit_file() { printf '%s/%s' "$FAN_TEST_UNITS" "$1"; }
 # shellcheck disable=SC2329
 unit_state() { [[ -f $(unit_file "$1") ]] && cat "$(unit_file "$1")"; }
@@ -38,6 +40,9 @@ case "$base" in
         printf '%s\n' "$TEST_SYSTEMCTL_LIST_UNIT_FILES_OUTPUT" >&2
       fi
       exit "$rc"
+    fi
+    if [[ $op == stop && -n ${TEST_SYSTEMCTL_STOP_SLEEP:-} ]]; then
+      sleep "$TEST_SYSTEMCTL_STOP_SLEEP"
     fi
     if [[ $op == stop && -n ${TEST_FAIL_STOP_UNIT:-} && $unit == "$TEST_FAIL_STOP_UNIT" ]]; then
       echo "Failed to stop $unit: Access denied" >&2; exit 1
@@ -131,6 +136,7 @@ chmod +x "$WORK/hold"
 
 box() {
   "$BWRAP" --unshare-net --dev-bind / / --bind "$WORK/fan" /proc/acpi/ibm/fan \
+    --bind "$WORK/run" /run \
     --bind "$WORK/hwmon" /sys/class/hwmon \
     --bind "$WORK/throttle" /sys/devices/system/cpu/cpu0/thermal_throttle \
     --bind "$WORK/bin/systemctl" /usr/bin/systemctl \
@@ -511,6 +517,37 @@ const qml=fs.readFileSync(process.argv[3],'utf8');
 try { assert.equal(c.switchError(127,''),'switch-failed'); assert.equal(c.switchError(0,''),''); assert(qml.includes('i18n("Fan level switch failed")')); assert(!qml.includes('i18n(FanState.switchError')); process.exit(0); } catch(e) { process.exit(1); }
 NODE
 report 3 'switch failure code maps to a literal translatable QML message' test "$?" -eq 0
+
+# F9: the first call is held in its first stop operation while the second starts.
+# With no helper lock, the second call's tagged operations land inside the first call.
+reset_case
+unit_set thinkfan.service active
+unit_set thinkpad-fan-hold.service active
+box /usr/bin/env FAN_TEST_CALL=first TEST_THINKFAN_INSTALLED=no TEST_SYSTEMCTL_STOP_SLEEP=0.4 \
+  /bin/bash /usr/local/bin/thinkpad-fan-set 3 >"$WORK/f9-first.out" 2>&1 &
+f9_first_pid=$!
+for _ in {1..100}; do
+  grep -q '^first systemctl stop thinkfan.service$' "$WORK/log" && break
+  sleep 0.01
+done
+box /usr/bin/env FAN_TEST_CALL=second TEST_THINKFAN_INSTALLED=no \
+  /bin/bash /usr/local/bin/thinkpad-fan-set auto >"$WORK/f9-second.out" 2>&1 &
+f9_second_pid=$!
+wait "$f9_first_pid"; f9_first_rc=$?
+wait "$f9_second_pid"; f9_second_rc=$?
+# shellcheck disable=SC2329
+check_f9_serialized() {
+  local first_last second_first
+  first_last=$(grep -n '^first ' "$WORK/log" | tail -n1 | cut -d: -f1)
+  second_first=$(grep -n '^second ' "$WORK/log" | head -n1 | cut -d: -f1)
+  [[ $f9_first_rc -eq 0 && $f9_second_rc -eq 0 && -n $first_last && -n $second_first && $first_last -lt $second_first ]]
+}
+report 9 'параллельные set выполняют все операции по очереди' check_f9_serialized
+node - "$ROOT/package/contents/code/fanstate.js" <<'NODE'
+const fs=require('fs'),vm=require('vm'),assert=require('assert'); const c={}; vm.createContext(c); vm.runInContext(fs.readFileSync(process.argv[2],'utf8').split(String.fromCharCode(10)).slice(1).join(String.fromCharCode(10)),c);
+try { assert.equal(c.switchResultCurrent(1,2),false); assert.equal(c.switchResultCurrent(2,2),true); process.exit(0); } catch(e) { process.exit(1); }
+NODE
+report 9 'устаревший ответ не меняет решение о сообщении переключения' test "$?" -eq 0
 
 [[ $FAILURES -gt 0 ]] && exit 1
 exit 0

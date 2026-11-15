@@ -30,6 +30,7 @@ PlasmoidItem {
     property bool thinkfanRunning: false
     property var freqMhz: null
     property bool helperMissing: false
+    property int switchRequestId: 0
 
     // Throttling is derived from the growth of the kernel event counter between
     // polls: package_throttle_total_time_ms stays 0 on several Intel generations,
@@ -89,10 +90,16 @@ PlasmoidItem {
 
         onNewData: function(source, data) {
             if (source !== root.statusHelper) {
-                if (data["exit code"] === 0)
-                    root.switchFailure = ""
-                else if (FanState.switchError(data["exit code"], data.stderr) === "switch-failed")
-                    root.switchFailure = i18n("Fan level switch failed")
+                var match = source.match(/ # ([0-9]+)$/)
+                var requestId = match ? Number(match[1]) : -1
+                if (FanState.switchResultCurrent(requestId, root.switchRequestId)) {
+                    if (data["exit code"] === 0)
+                        root.switchFailure = ""
+                    else if (FanState.switchError(data["exit code"], data.stderr) === "switch-failed")
+                        root.switchFailure = i18n("Fan level switch failed")
+                    // Queued switches finish later than the click: refresh after the last one.
+                    refreshTimer.restart()
+                }
             }
             if (source === root.statusHelper) {
                 var state = FanState.applyStatus(root.throttleCount, data.stdout || "", data["exit code"])
@@ -115,7 +122,8 @@ PlasmoidItem {
         function setLevel(value) {
             // pkexec + a polkit rule with allow_active=yes: no password prompt for
             // the local session, and no sudoers editing by the user.
-            exec.connectSource("pkexec " + root.setHelper + " " + value)
+            root.switchRequestId += 1
+            exec.connectSource("pkexec " + root.setHelper + " " + value + " # " + root.switchRequestId)
             refreshTimer.restart()
         }
     }

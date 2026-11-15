@@ -68,3 +68,7 @@ function sensorValue(value) {
 function switchError(exitCode, stderr) {
     return exitCode === 0 ? "" : "switch-failed"
 }
+
+function switchResultCurrent(requestId, latestId) {
+    return requestId === latestId
+}
