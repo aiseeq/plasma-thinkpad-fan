@@ -14,4 +14,3 @@ Plasma 6 panel widget (QML, `package/`) plus bash helpers in `/usr/local/bin` (`
   Зачем: fan speed is not judged by the /proc tachometer, which reports false RPM
 - Sensor ids — `busctl --user call org.kde.ksystemstats1 /org/kde/ksystemstats1 org.kde.ksystemstats1 allSensors` (qdbus cannot).
 - Machine config around it (`thinkpad_acpi fan_control=1`, thinkfan) lives in `~/git/machine`, not here.
-  Зачем: the machine's fan setup is not duplicated or edited in the public widget repo
