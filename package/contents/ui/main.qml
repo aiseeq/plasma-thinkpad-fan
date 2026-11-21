@@ -128,13 +128,19 @@ PlasmoidItem {
         }
     }
 
+    // Closed popup: the panel shows only temperature (sensor, not this poll)
+    // and the second line, so the helper runs less often; an opened popup
+    // gets a fresh read at once and the fast interval.
     Timer {
-        interval: 2000
+        id: pollTimer
+        interval: root.expanded ? 2000 : 6000
         running: true
         repeat: true
         triggeredOnStart: true
         onTriggered: exec.poll()
     }
+
+    onExpandedChanged: if (expanded) { exec.poll(); pollTimer.restart() }
 
     // Quick re-read right after a level change, so the UI does not lag behind.
     Timer {
