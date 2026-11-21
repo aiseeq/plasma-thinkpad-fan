@@ -13,20 +13,31 @@
 FAN=/proc/acpi/ibm/fan
 THROTTLE=/sys/devices/system/cpu/cpu0/thermal_throttle/package_throttle_count
 
-level=$(awk '/^level:/{print $2}' "$FAN" 2>/dev/null)
+read -r level freq count < <(awk '
+    FILENAME == ARGV[1] && /^level:/ && level == "" { level=$2 }
+    FILENAME == ARGV[2] && /cpu MHz/ { sum += $4; n++ }
+    FILENAME == ARGV[3] && FNR == 1 { count=$0 }
+    END {
+        if (level == "") level="n/a"
+        if (n) freq=int(sum/n); else freq="unavailable"
+        if (count !~ /^[0-9]+$/) count="unavailable"
+        printf "%s %s %s\n", level, freq, count
+    }
+' "$FAN" /proc/cpuinfo "$THROTTLE" 2>/dev/null)
 [[ -n "$level" ]] || level="n/a"
-
-freq=$(awk '/cpu MHz/{s+=$4; n++} END{if (n) printf "%d", s/n; else print "unavailable"}' /proc/cpuinfo 2>/dev/null)
 [[ -n "$freq" ]] || freq=unavailable
-count=$(cat "$THROTTLE" 2>/dev/null) || count=unavailable
 [[ "$count" =~ ^[0-9]+$ ]] || count=unavailable
-hold=$(systemctl is-active thinkpad-fan-hold.service 2>/dev/null) || :
+
+states=$(systemctl is-active thinkfan.service thinkpad-fan-hold.service 2>/dev/null) || :
+mapfile -t unit_states <<< "$states"
+thinkfan=${unit_states[0]:-}
+hold=${unit_states[1]:-}
 # failed: hold exited with an error (protection gave up, a write failed) — the widget warns about it.
 case "$hold" in active|inactive|failed) ;; *) hold=unknown ;; esac
 
 printf '%s|%s|%s|%s|%s\n' \
     "$level" \
-    "$(systemctl is-active thinkfan.service 2>/dev/null)" \
+    "$thinkfan" \
     "$freq" \
     "$count" \
     "$hold"

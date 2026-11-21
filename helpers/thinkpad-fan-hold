@@ -30,8 +30,6 @@ case "${1:-}" in
     *) echo "usage: ${0##*/} 0-7|full" >&2; exit 2 ;;
 esac
 
-current_level() { awk '/^level:/{print $2}' "$FAN" 2>/dev/null; }
-
 thinkfan_unit_installed() {
     # LoadState is machine-readable and not localized: loaded, not-found, masked, ...
     local state
@@ -78,8 +76,19 @@ if (( TCRIT > 0 )); then
     [[ -n "$CORE" && -r "$CORE/temp1_input" ]] || fail_protection "coretemp sensor is missing or unreadable"
 fi
 
+# Keep the sleep descriptor open so each timed read waits without starting a
+# process. Opening it once at startup also prevents EOF from ending the waits.
+exec {nap}<> <(:)
+
 while true; do
-    if [[ "$(current_level)" != "$want" ]] && ! echo "$cmd" > "$FAN"; then
+    current_level=""
+    while IFS= read -r line; do
+        [[ $line == level:* ]] || continue
+        IFS=$' \t' read -r _ current_level _ <<< "$line"
+        break
+    done < "$FAN" 2>/dev/null
+
+    if [[ "$current_level" != "$want" ]] && ! echo "$cmd" > "$FAN"; then
         echo "${0##*/}: failed to write fan level; restoring automatic control" >&2
         restore_automatic || :
         exit 1
@@ -97,5 +106,5 @@ while true; do
         fi
     fi
 
-    sleep "$INTERVAL"
+    read -r -t "$INTERVAL" -u "$nap" _ || :
 done

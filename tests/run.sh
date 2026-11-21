@@ -74,13 +74,18 @@ case "$base" in
         [[ -n $state && $state != unloaded ]] || { echo "Unit $unit could not be found." >&2; exit 1; }
         echo "$unit - $state"; exit 0 ;;
       is-active)
-        state=$(unit_state "$unit")
-        case "$state" in
-          active) echo active; exit 0 ;;
-          failed) echo failed; exit 3 ;;
-          inactive) echo inactive; exit 3 ;;
-          *) echo inactive; exit 4 ;;
-        esac ;;
+        active=0; rc=0
+        for unit in "${@:2}"; do
+          state=$(unit_state "$unit")
+          case "$state" in
+            active) echo active; active=1 ;;
+            failed) echo failed; (( rc == 0 )) && rc=3 ;;
+            inactive) echo inactive; (( rc == 0 )) && rc=3 ;;
+            *) echo inactive; (( rc == 0 )) && rc=4 ;;
+          esac
+        done
+        (( active )) && exit 0
+        exit "$rc" ;;
       stop)
         state=$(unit_state "$unit")
         [[ -n $state && $state != unloaded ]] || { echo "Unit $unit not loaded." >&2; exit 5; }
@@ -297,7 +302,7 @@ check_f4_status() {
     [[ $(awk -F'|' '{print $5}' "$WORK/hold-inactive.out") == inactive ]] &&
     [[ $(awk -F'|' '{print $5}' "$WORK/hold-unloaded.out") == inactive ]] &&
     [[ $(awk -F'|' '{print $5}' "$WORK/hold-unknown.out") == unknown ]] &&
-    [[ $(grep -c '^systemctl is-active thinkpad-fan-hold.service$' "$WORK/log") -eq 4 ]]
+    [[ $(grep -c '^systemctl is-active thinkfan.service thinkpad-fan-hold.service$' "$WORK/log") -eq 4 ]]
 }
 report 4 'status helper exports active, inactive, and unknown hold state' check_f4_status
 
