@@ -110,6 +110,7 @@ case "$base" in
     rc=${TEST_SYSTEMD_RUN_RC:-0}
     if [[ $rc -eq 0 ]]; then
       for arg in "$@"; do
+        [[ $arg == --property=ExecStopPost=* ]] && printf '%s\n' "${arg#--property=ExecStopPost=}" > /run/test-stoppost
         if [[ $arg == --unit=* ]]; then
           unit=${arg#--unit=}; [[ $unit == *.service ]] || unit+=.service
           unit_set "$unit" "${TEST_SYSTEMD_RUN_HOLD_STATE:-active}"
@@ -241,6 +242,15 @@ check_f3_auto() { [[ $auto_rc -eq 0 && $(fan_level) == auto ]]; }
 reset_case
 box /usr/bin/env TEST_THINKFAN_INSTALLED=no /bin/bash /usr/local/bin/thinkpad-fan-set auto >/dev/null 2>&1; auto_rc=$?
 report 3 'set auto succeeds without an old hold' check_f3_auto
+# F3: a hold that dies outside set (kill, OOM) gives the fan back to the EC through ExecStopPost.
+# shellcheck disable=SC2329
+check_f3_crash() { [[ $crash_rc -eq 0 && -s $WORK/run/test-stoppost && $(fan_level) == auto ]]; }
+reset_case
+rm -f "$WORK/run/test-stoppost"
+box /usr/bin/env TEST_THINKFAN_INSTALLED=no /bin/bash /usr/local/bin/thinkpad-fan-set 3 >/dev/null 2>&1; crash_rc=$?
+echo 'level: 3' > "$WORK/fan"
+[[ -s $WORK/run/test-stoppost ]] && box /bin/bash -c "$(cat "$WORK/run/test-stoppost")" >/dev/null 2>&1
+report 3 'аварийная смерть hold: ExecStopPost возвращает level auto' check_f3_crash
 # shellcheck disable=SC2329
 check_f3_replace() {
   local stop_line run_line

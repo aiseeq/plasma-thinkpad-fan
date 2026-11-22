@@ -116,8 +116,10 @@ case "${1:-}" in
             start_thinkfan_if_installed || echo "failed to restart thinkfan after hold stop failure" >&2
             exit 1
         fi
+        # ExecStopPost runs on any exit of the hold, a crash or a kill included: the EC takes the fan back.
         if ! systemd-run --no-block --unit=thinkpad-fan-hold \
             --description="Hold ThinkPad fan at level $1" \
+            --property="ExecStopPost=/bin/sh -c 'echo level auto > $FAN'" \
             "$HOLD" "$1" >/dev/null; then
             echo "failed to start fan hold" >&2
             set_automatic || echo "failed to restore automatic fan control after hold start failure" >&2
