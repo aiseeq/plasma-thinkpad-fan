@@ -34,10 +34,12 @@ stop_unit_if_loaded() {
     esac
 
     if [[ "$state" == failed ]]; then
+        # A failed unit is not running; reset-failed unloads a transient one, so there is nothing to stop.
         systemctl reset-failed "$unit" 2>/dev/null || {
             echo "failed to reset failed state of $unit" >&2
             return 1
         }
+        return 0
     fi
     systemctl stop "$unit" 2>/dev/null || {
         echo "failed to stop $unit" >&2

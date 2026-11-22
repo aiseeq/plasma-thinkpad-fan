@@ -94,7 +94,9 @@ case "$base" in
       reset-failed)
         state=$(unit_state "$unit")
         [[ -n $state && $state != unloaded ]] || exit 1
-        [[ $state != failed ]] || unit_set "$unit" inactive
+        # systemd unloads a failed transient unit on reset-failed (systemd-run left a marker).
+        if [[ $state == failed && -e $(unit_file "$unit").transient ]]; then unit_remove "$unit"
+        elif [[ $state == failed ]]; then unit_set "$unit" inactive; fi
         exit 0 ;;
       start)
         if [[ $unit == thinkfan.service && ${TEST_THINKFAN_INSTALLED:-yes} == no ]]; then
@@ -113,7 +115,7 @@ case "$base" in
         [[ $arg == --property=ExecStopPost=* ]] && printf '%s\n' "${arg#--property=ExecStopPost=}" > /run/test-stoppost
         if [[ $arg == --unit=* ]]; then
           unit=${arg#--unit=}; [[ $unit == *.service ]] || unit+=.service
-          unit_set "$unit" "${TEST_SYSTEMD_RUN_HOLD_STATE:-active}"
+          unit_set "$unit" "${TEST_SYSTEMD_RUN_HOLD_STATE:-active}"; : > "$(unit_file "$unit").transient"
         fi
       done
     fi
@@ -251,6 +253,14 @@ box /usr/bin/env TEST_THINKFAN_INSTALLED=no /bin/bash /usr/local/bin/thinkpad-fa
 echo 'level: 3' > "$WORK/fan"
 [[ -s $WORK/run/test-stoppost ]] && box /bin/bash -c "$(cat "$WORK/run/test-stoppost")" >/dev/null 2>&1
 report 3 'аварийная смерть hold: ExecStopPost возвращает level auto' check_f3_crash
+# F3: after the crash systemd keeps the hold failed; set auto unloads it and starts thinkfan again.
+# shellcheck disable=SC2329
+check_f3_after_crash() { [[ $after_crash_rc -eq 0 && $(fan_level) == auto && $(unit_state thinkfan.service) == active && -z $(unit_state thinkpad-fan-hold.service) ]]; }
+reset_case
+box /bin/bash /usr/local/bin/thinkpad-fan-set 3 >/dev/null 2>&1
+unit_set thinkpad-fan-hold.service failed
+box /bin/bash /usr/local/bin/thinkpad-fan-set auto >"$WORK/after-crash.out" 2>&1; after_crash_rc=$?
+report 3 'set auto после аварийной смерти hold: успех и thinkfan снова запущен' check_f3_after_crash
 # shellcheck disable=SC2329
 check_f3_replace() {
   local stop_line run_line
